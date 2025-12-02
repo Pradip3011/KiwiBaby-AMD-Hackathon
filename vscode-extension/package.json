@@ -1,0 +1,36 @@
+{
+  "name": "ai-testcase-vscode",
+  "displayName": "AI TestCase Generator",
+  "description": "VS Code extension to generate test cases using AI",
+  "version": "0.1.0",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:aiTest.generate"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiTest.generate",
+        "title": "AI: Generate Test Cases"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "author": "Pradip",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^4.9.4",
+    "vscode": "^1.1.37"
+  }
+}

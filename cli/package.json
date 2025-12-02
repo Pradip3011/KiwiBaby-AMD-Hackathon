@@ -1,0 +1,19 @@
+{
+  "name": "tcgen",
+  "version": "0.1.0",
+  "description": "CLI tool for generating test cases using AI",
+  "main": "bin/tcgen.js",
+  "bin": {
+    "tcgen": "./bin/tcgen.js"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node bin/tcgen.js"
+  },
+  "author": "Pradip",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^2.6.7",
+    "commander": "^9.5.0"
+  }
+}

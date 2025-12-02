@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "@types/node-fetch": "^2.6.13",
+    "@types/vscode": "^1.106.1"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "vscode": "^1.1.37"
+  }
+}
