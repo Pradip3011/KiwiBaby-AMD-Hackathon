@@ -1,41 +1,70 @@
-from pydantic import BaseModel
-from typing import Optional, List, Dict
+# backend/app/schemas.py
+
+from typing import Optional, List, Dict, Any, Literal, Union
+from pydantic import BaseModel, Field
+
+
+# -------------------------
+# Allowed output formats
+# -------------------------
+OutputFormat = Literal["json", "gherkin", "excel", "text"]
+
 
 # -------------------------
 # Single requirement input
 # -------------------------
 class GenerateReq(BaseModel):
-    requirement: str
-    output_format: Optional[str] = "json"  # json | gherkin | csv | xlsx | text
+    requirement: str = Field(..., min_length=1)
+    output_format: OutputFormat = "json"
+
 
 # -------------------------
 # Batch requirements input
 # -------------------------
 class BatchReq(BaseModel):
-    requirements: List[str]
-    output_format: Optional[str] = "json"
+    requirements: List[str] = Field(..., min_items=1)
+    output_format: OutputFormat = "json"
+
 
 # -------------------------
 # Test case structure
 # -------------------------
 class TestCase(BaseModel):
-    id: str                       # TC-001, TC-002, etc.
-    description: str               # Short test title
-    preconditions: Optional[str]  # Optional preconditions
-    steps: List[str]               # Step-by-step instructions
-    expected: str                  # Expected result
+    id: Optional[str] = None
+    description: str
+    preconditions: Optional[str] = None
+    steps: List[str] = Field(default_factory=list)
+    expected: str
     type: Optional[str] = "Positive"  # Positive | Negative | Edge | Validation
     priority: Optional[str] = None
     severity: Optional[str] = None
-    tags: Optional[List[str]] = []
+    tags: List[str] = Field(default_factory=list)
+
 
 # -------------------------
-# Batch test case output structure (optional)
+# Structured JSON output
+# -------------------------
+class TestCaseOutput(BaseModel):
+    summary: Optional[str] = None
+    test_cases: List[TestCase] = Field(default_factory=list)
+
+
+# -------------------------
+# Single requirement response
+# -------------------------
+class GenerateResponse(BaseModel):
+    format: OutputFormat
+    output: Union[Dict[str, Any], List[Any], str]
+
+
+# -------------------------
+# Batch test case output
 # -------------------------
 class RequirementOutput(BaseModel):
     requirement: str
-    format: str
-    output: Dict  # Can be raw JSON or structured dict with test_cases
+    format: OutputFormat
+    output: Union[Dict[str, Any], List[Any], str]
+
 
 class BatchOutput(BaseModel):
-    batch_results: List[RequirementOutput]
+    batch_results: List[RequirementOutput] = Field(default_factory=list)

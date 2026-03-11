@@ -1,28 +1,44 @@
-export async function generate(requirement, format = "json") {
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+export async function generate(requirement, format = 'json') {
   try {
-    const res = await fetch("http://localhost:8000/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    const res = await fetch(`${API_URL}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         requirement,
         output_format: format,
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     if (!res.ok) {
       let errorText;
+
       try {
         const error = await res.json();
-        errorText = error.detail || "Backend error";
+        errorText = error.detail || 'Backend error';
       } catch {
-        errorText = await res.text(); // fallback to raw text
+        errorText = await res.text();
       }
+
       throw new Error(errorText);
     }
 
-    return await res.json();
+    const data = await res.json();
+
+    if (!data) {
+      throw new Error('Invalid server response');
+    }
+
+    return data;
   } catch (err) {
-    console.error("API Error:", err);
+    console.error('API Error:', err);
     throw err;
   }
 }
