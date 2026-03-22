@@ -11,15 +11,22 @@ OutputFormat = Literal["json", "gherkin", "excel", "text"]
 
 
 # -------------------------
-# Single requirement input
+# AUTH
 # -------------------------
-class GenerateReq(BaseModel):
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1)
+
+
+# -------------------------
+# Generate (NEW ROUTER)
+# -------------------------
+class GenerateRequest(BaseModel):
     requirement: str = Field(..., min_length=1)
     output_format: OutputFormat = "json"
 
 
 # -------------------------
-# Batch requirements input
+# Batch (optional)
 # -------------------------
 class BatchReq(BaseModel):
     requirements: List[str] = Field(..., min_items=1)
@@ -35,7 +42,7 @@ class TestCase(BaseModel):
     preconditions: Optional[str] = None
     steps: List[str] = Field(default_factory=list)
     expected: str
-    type: Optional[str] = "Positive"  # Positive | Negative | Edge | Validation
+    type: Optional[str] = "Positive"
     priority: Optional[str] = None
     severity: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
@@ -50,15 +57,34 @@ class TestCaseOutput(BaseModel):
 
 
 # -------------------------
-# Single requirement response
+# Coverage response (NEW)
+# -------------------------
+class CoverageResponse(BaseModel):
+    coverage_percent: float
+    covered_keywords: List[str] = []
+    missing_keywords: List[str] = []
+    total_keywords: int
+
+
+# -------------------------
+# Final API response (NEW)
 # -------------------------
 class GenerateResponse(BaseModel):
-    format: OutputFormat
-    output: Union[Dict[str, Any], List[Any], str]
+    testcases: List[Dict[str, Any]]
+    coverage: CoverageResponse
 
 
 # -------------------------
-# Batch test case output
+# History response
+# -------------------------
+class HistoryItem(BaseModel):
+    requirement: str
+    output: List[Dict[str, Any]]
+    created_at: Any
+
+
+# -------------------------
+# Batch output (optional)
 # -------------------------
 class RequirementOutput(BaseModel):
     requirement: str

@@ -1,69 +1,72 @@
 # backend/app/utils.py
+
 import json
 import re
+import logging
 from typing import Any
 
+logger = logging.getLogger("ai-testcase-agent.utils")
 
+
+# -------------------------
+# JSON PARSER
+# -------------------------
 def try_parse_json(text: str) -> Any | None:
     """
-    Safely parse JSON from LLM output.
-
-    Handles:
-    - markdown code fences
-    - extra commentary
-    - truncated JSON
-    - JSON objects or arrays
-
-    Returns parsed JSON or None.
+    Robust JSON parser for LLM output.
     """
+
     if not text or not isinstance(text, str):
+        logger.warning("Invalid input to try_parse_json")
         return None
 
     cleaned = text.strip()
 
-    # Remove markdown code fences like ```json ... ```
+    # Remove markdown fences
     cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    cleaned = cleaned.strip()
+    cleaned = re.sub(r"\s*```$", "", cleaned).strip()
 
-    # Try parsing directly
+    # Attempt direct parse
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
 
-    # Extract first JSON object or array from surrounding text
-    try:
-        match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", cleaned)
-        if match:
-            candidate = match.group(0).strip()
+    # Extract JSON block
+    match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", cleaned)
+    if match:
+        candidate = match.group(0).strip()
+        try:
             return json.loads(candidate)
-    except json.JSONDecodeError:
-        pass
+        except json.JSONDecodeError:
+            cleaned = candidate  # fallback to repair
 
-    # Attempt simple repair for truncated JSON
+    # Repair truncated JSON (simple heuristics)
     try:
-        if cleaned.startswith("{") and not cleaned.endswith("}"):
-            return json.loads(cleaned + "}")
+        open_braces = cleaned.count("{")
+        close_braces = cleaned.count("}")
+        if open_braces > close_braces:
+            cleaned += "}" * (open_braces - close_braces)
 
-        if cleaned.startswith("[") and not cleaned.endswith("]"):
-            return json.loads(cleaned + "]")
-    except json.JSONDecodeError:
-        pass
+        open_brackets = cleaned.count("[")
+        close_brackets = cleaned.count("]")
+        if open_brackets > close_brackets:
+            cleaned += "]" * (open_brackets - close_brackets)
 
-    return None
+        return json.loads(cleaned)
+    except Exception:
+        logger.warning("JSON parsing failed after repair attempt")
+        return None
 
 
+# -------------------------
+# AUTO NUMBERING
+# -------------------------
 def auto_number_test_cases(json_data: Any) -> Any:
     """
-    Assign sequential IDs to test cases: TC-001, TC-002, etc.
-
-    Supports:
-    - {"test_cases": [...]}
-    - direct list [...]
-
-    Does not overwrite an existing non-empty id.
+    Assign sequential IDs: TC_001, TC_002
     """
+
     if not json_data:
         return json_data
 
@@ -71,14 +74,14 @@ def auto_number_test_cases(json_data: Any) -> Any:
     if isinstance(json_data, dict) and isinstance(json_data.get("test_cases"), list):
         for i, tc in enumerate(json_data["test_cases"], start=1):
             if isinstance(tc, dict) and not tc.get("id"):
-                tc["id"] = f"TC-{i:03}"
+                tc["id"] = f"TC_{i:03}"
         return json_data
 
-    # Case 2: direct list of test case dicts
+    # Case 2: direct list
     if isinstance(json_data, list):
         for i, tc in enumerate(json_data, start=1):
             if isinstance(tc, dict) and not tc.get("id"):
-                tc["id"] = f"TC-{i:03}"
+                tc["id"] = f"TC_{i:03}"
         return json_data
 
     return json_data

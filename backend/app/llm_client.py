@@ -1,31 +1,15 @@
-# backend/app/llm_client.py
-"""
-Multi-provider LLM client.
-
-Exports:
-    generate_from_requirement(requirement: str, format: str = "text", model_name: str | None = None, temperature: float = 0.2) -> dict
-
-Behavior:
-- Routes to OpenAI if settings.LLM_PROVIDER == "openai"
-- Routes to Gemini if settings.LLM_PROVIDER == "gemini"
-- Keeps retry / continuation logic for truncated JSON
-- Returns consistent shape:
-    {
-        "format": "...",
-        "output": {"raw": "..."},
-        "meta": {...}
-    }
-"""
 from typing import Optional
 import logging
 
 from .config import settings
+from .utils import try_parse_json
+from .memory import retrieve_similar  # 🔥 MEMORY IMPORT
 
 logger = logging.getLogger("ai-testcase-agent.llm")
 
 # Optional provider imports
 try:
-    import google.generativeai as genai  # type: ignore
+    import google.generativeai as genai
 except Exception:
     genai = None
 
@@ -38,50 +22,65 @@ DEFAULT_GEMINI_MODEL = settings.LLM_MODEL or "gemini-1.5-flash"
 DEFAULT_OPENAI_MODEL = settings.LLM_MODEL or "gpt-4o-mini"
 
 
+# -------------------------
+# SYSTEM PROMPT
+# -------------------------
 SYSTEM_PROMPT = """
 You are an expert QA engineer with 10+ years of experience.
 
-Your task is to generate test cases and summaries based on feature requirements.
+MANDATORY COVERAGE:
+- Positive scenarios
+- Negative scenarios
+- Edge cases
+- Validation scenarios
 
-Always begin with a brief Test Summary (2–4 sentences) describing the feature and testing scope.
+Ensure:
+- No duplicate test cases
+- Each test covers a unique condition
+- Full requirement coverage
 
-Respond in the specified output format: JSON, Gherkin, Excel, or plain text.
-
-Avoid unsafe, ambiguous, or imperative phrasing. Keep steps clear, logical, and test-ready.
+Always begin with a short Test Summary (2–4 sentences).
 """
 
 
+# -------------------------
+# PROMPT BUILDER
+# -------------------------
 def _format_prompt_for(fmt: str, requirement: str) -> str:
     fmt = fmt.lower()
 
     if fmt == "json":
-        format_prompt = """
-Return ONLY valid JSON. No markdown, no backticks, no commentary.
+        return f"""{SYSTEM_PROMPT}
+
+Return ONLY valid JSON. No markdown, no backticks.
 
 STRICT FORMAT:
-{
-  "summary": "<2–4 sentence summary>",
+{{
+  "summary": "<summary>",
   "test_cases": [
-    {
+    {{
       "id": "TC-001",
-      "description": "Short test title",
+      "description": "Short title",
       "preconditions": "Preconditions or null",
       "steps": ["Step 1", "Step 2"],
       "expected": "Expected result",
       "type": "Positive | Negative | Edge | Validation"
-    }
+    }}
   ]
-}
+}}
 
 RULES:
-- Output JSON ONLY.
-- NEVER stop mid-sentence.
-- NEVER stop until JSON is fully closed with the final '}'.
-- If unsure, KEEP GENERATING until JSON is complete.
-- Ensure fully valid JSON.
+- NEVER truncate JSON
+- Ensure valid closing braces
+- Include all scenario types
+
+Requirement:
+{requirement}
 """
+
     elif fmt == "gherkin":
-        format_prompt = """
+        return f"""{SYSTEM_PROMPT}
+
 Generate a Test Summary followed by BDD-style test cases in Gherkin format.
 
 STRICT GHERKIN RULES:
@@ -109,6 +108,7 @@ IMPORTANT RULES:
 6. Use **Then** for every expected result.
 7. NEVER use **And** after Then.
 8. Do NOT use numbered steps inside scenarios.
+9. Ensure coverage includes positive, negative, and edge scenarios.
 
 Example:
 
@@ -129,323 +129,145 @@ And I enter an incorrect password
 And I click the Login button
 Then I should see an error message
 Then I should remain on the login page
+
+
+Requirement:
+{requirement}
 """
+
     elif fmt == "excel":
-        format_prompt = """
-Generate a Test Summary and a table suitable for Excel.
+        return f"""{SYSTEM_PROMPT}
+
+Generate test cases in table format:
 
 Columns:
-Test Case ID | Title | Precondition | Steps | Expected Result | Type
+Test Case ID | Title | Preconditions | Steps | Expected Result | Type
+
+Requirement:
+{requirement}
 """
+
     else:
-        format_prompt = """
-Generate a Test Summary and detailed test cases:
-- Positive
-- Negative
-- Edge
-- Validation
+        return f"""{SYSTEM_PROMPT}
+
+Generate detailed test cases.
+
+Requirement:
+{requirement}
 """
-        if len(requirement.split()) < 8:
-            requirement += " The system should validate inputs and return appropriate success or error messages."
-
-    return f"{SYSTEM_PROMPT}\n{format_prompt}\nRequirement:\n{requirement}"
 
 
-def _extract_gemini_text(resp) -> str:
-    try:
-        if hasattr(resp, "candidates") and resp.candidates:
-            cand = resp.candidates[0]
-            if getattr(cand, "content", None) and getattr(cand.content, "parts", None):
-                parts = cand.content.parts
-                if parts and hasattr(parts[0], "text"):
-                    return parts[0].text
-        if getattr(resp, "text", None):
-            return resp.text
-        return str(resp)
-    except Exception:
-        logger.exception("Error extracting text from Gemini response")
-        return ""
-
-
-def _extract_openai_text(resp) -> str:
-    try:
-        if resp is None:
-            return ""
-
-        choices = getattr(resp, "choices", None)
-        if not choices:
-            return getattr(resp, "text", "") or str(resp)
-
-        first = choices[0]
-
-        if hasattr(first, "message") and getattr(first.message, "content", None):
-            content = first.message.content
-
-            # Usually content is a string
-            if isinstance(content, str):
-                return content
-
-            # Handle list-based content parts if returned
-            if isinstance(content, list):
-                parts = []
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        parts.append(item.get("text", ""))
-                    elif hasattr(item, "text"):
-                        parts.append(getattr(item, "text", ""))
-                return "".join(parts)
-
-        if getattr(first, "text", None):
-            return first.text
-
-        return str(first)
-    except Exception:
-        logger.exception("Error extracting text from OpenAI response")
-        return ""
-
-
-def _gen_gemini(
-    requirement: str,
-    format: str = "text",
-    model_name: Optional[str] = None,
-    temperature: float = 0.2,
-) -> dict:
-    if genai is None:
-        raise RuntimeError(
-            "google.generativeai not installed. Install google-generativeai or switch provider to openai."
-        )
-
-    api_key = settings.LLM_API_KEY
-    if not api_key:
-        raise RuntimeError(
-            "Gemini API key not set. Set GEMINI_API_KEY or LLM_API_KEY in your environment."
-        )
-
-    genai.configure(api_key=api_key)
-
-    model_name = model_name or settings.LLM_MODEL or DEFAULT_GEMINI_MODEL
-    fmt = format.lower()
-    prompt = _format_prompt_for(fmt, requirement)
-
-    try:
-        model = genai.GenerativeModel(model_name=model_name)
-    except Exception:
-        model = None
-
-    def call_model(temp: float):
-        if model is not None:
-            return model.generate_content(
-                contents=[{"role": "user", "parts": [{"text": prompt}]}],
-                generation_config={
-                    "temperature": temp,
-                    "top_p": 1,
-                    "top_k": 1,
-                    "max_output_tokens": int(settings.MAX_TOKENS or 4096),
-                },
-            )
-
-        return genai.text.generate(
-            model=model_name,
-            prompt=prompt,
-            max_output_tokens=int(settings.MAX_TOKENS or 4096),
-            temperature=temp,
-        )
-
-    response = call_model(temperature)
-    output_text = _extract_gemini_text(response)
-
-    if not output_text:
-        logger.warning("Empty Gemini response. Retrying...")
-        response = call_model(0.6)
-        output_text = _extract_gemini_text(response)
-
-    if not output_text:
-        return {
-            "format": format,
-            "output": {
-                "raw": "Model returned no output. Try expanding the requirement or switching format."
-            },
-            "meta": {"provider": "gemini", "model": model_name},
-        }
-
-    if fmt == "json":
-        trimmed = output_text.strip()
-        if not trimmed.endswith("}"):
-            logger.warning("Gemini JSON appears truncated. Requesting continuation...")
-            continuation_prompt = f"""
-The JSON below was cut off before completion.
-Continue EXACTLY where it stopped and return ONLY the missing JSON text.
-Do NOT repeat any existing content.
-
-Existing JSON:
-{output_text}
-
-Continue from the next character:
-"""
-            try:
-                if model is not None:
-                    continuation = model.generate_content(
-                        contents=[{"role": "user", "parts": [{"text": continuation_prompt}]}],
-                        generation_config={
-                            "temperature": 0.35,
-                            "top_p": 1,
-                            "top_k": 1,
-                            "max_output_tokens": int(settings.MAX_TOKENS or 4096),
-                        },
-                    )
-                else:
-                    continuation = genai.text.generate(
-                        model=model_name,
-                        prompt=continuation_prompt,
-                        max_output_tokens=int(settings.MAX_TOKENS or 4096),
-                        temperature=0.35,
-                    )
-
-                more = _extract_gemini_text(continuation)
-                if more:
-                    output_text += more
-            except Exception:
-                logger.exception("Gemini continuation generation failed")
-
-    return {
-        "format": format,
-        "output": {"raw": output_text},
-        "meta": {"provider": "gemini", "model": model_name},
-    }
-
-
-def _gen_openai(
-    requirement: str,
-    format: str = "text",
-    model_name: Optional[str] = None,
-    temperature: float = 0.2,
-) -> dict:
+# -------------------------
+# PROVIDERS
+# -------------------------
+def _gen_openai(prompt: str):
     if OpenAI is None:
-        raise RuntimeError(
-            "OpenAI SDK not installed. Install openai package or switch provider to gemini."
-        )
+        raise RuntimeError("OpenAI SDK not installed")
 
-    api_key = settings.LLM_API_KEY
-    if not api_key:
-        raise RuntimeError(
-            "OpenAI API key not set. Set OPENAI_API_KEY or LLM_API_KEY in your environment."
-        )
+    client = OpenAI(api_key=settings.LLM_API_KEY)
 
-    model_name = model_name or settings.LLM_MODEL or DEFAULT_OPENAI_MODEL
-    client = OpenAI(api_key=api_key)
+    resp = client.chat.completions.create(
+        model=DEFAULT_OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=1500,
+    )
 
-    fmt = format.lower()
+    return resp.choices[0].message.content
+
+
+def _gen_gemini(prompt: str):
+    if genai is None:
+        raise RuntimeError("Gemini SDK not installed")
+
+    genai.configure(api_key=settings.LLM_API_KEY)
+
+    model = genai.GenerativeModel(DEFAULT_GEMINI_MODEL)
+
+    resp = model.generate_content(prompt)
+
+    return getattr(resp, "text", str(resp))
+
+
+def _generate(requirement: str, fmt: str):
     prompt = _format_prompt_for(fmt, requirement)
 
-    def call_openai(temp: float):
-        return client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a helpful QA test case generator."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=temp,
-            max_tokens=min(int(settings.MAX_TOKENS or 1500), 1500),
-        )
+    provider = (settings.LLM_PROVIDER or "openai").lower()
 
     try:
-        resp = call_openai(temperature)
-    except Exception:
-        logger.exception("OpenAI generate failed on first attempt; retrying...")
-        try:
-            resp = call_openai(min(0.6, max(temperature, 0.6)))
-        except Exception:
-            logger.exception("OpenAI retry failed")
-            return {
-                "format": format,
-                "output": {"raw": "OpenAI provider call failed. See server logs."},
-                "meta": {"provider": "openai", "model": model_name},
-            }
-
-    output_text = _extract_openai_text(resp)
-
-    if not output_text:
-        logger.warning("OpenAI returned empty content")
-        return {
-            "format": format,
-            "output": {
-                "raw": "OpenAI returned no output. Try expanding the requirement or switching format."
-            },
-            "meta": {"provider": "openai", "model": model_name},
-        }
-
-    if fmt == "json":
-        trimmed = output_text.strip()
-        if not trimmed.endswith("}"):
-            logger.warning("OpenAI JSON appears truncated. Requesting continuation...")
-            continuation_prompt = f"""
-The JSON below was cut off before completion.
-Continue EXACTLY where it stopped and return ONLY the missing JSON text.
-Do NOT repeat any existing content.
-
-Existing JSON:
-{output_text}
-
-Continue from the next character:
-"""
-            try:
-                cont_resp = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": "You are a helpful QA test case generator."},
-                        {"role": "user", "content": continuation_prompt},
-                    ],
-                    temperature=0.35,
-                    max_tokens=min(int(settings.MAX_TOKENS or 1500), 1500),
-                )
-                more = _extract_openai_text(cont_resp)
-                if more:
-                    output_text += more
-            except Exception:
-                logger.exception("OpenAI continuation attempt failed")
-
-    return {
-        "format": format,
-        "output": {"raw": output_text},
-        "meta": {"provider": "openai", "model": model_name},
-    }
-
-
-def generate_from_requirement(
-    requirement: str,
-    format: str = "text",
-    model_name: Optional[str] = None,
-    temperature: float = 0.2,
-) -> dict:
-    """
-    Public entrypoint.
-    Keep this synchronous so existing FastAPI code can call it via asyncio.to_thread().
-    """
-    provider = (settings.LLM_PROVIDER or "openai").strip().lower()
-
-    try:
-        if provider == "openai":
-            return _gen_openai(
-                requirement,
-                format=format,
-                model_name=model_name,
-                temperature=temperature,
-            )
-
         if provider == "gemini":
-            return _gen_gemini(
-                requirement,
-                format=format,
-                model_name=model_name,
-                temperature=temperature,
-            )
+            return _gen_gemini(prompt)
 
-        raise ValueError(f"Unsupported LLM provider: {provider}")
+        return _gen_openai(prompt)
 
-    except Exception as e:
-        logger.exception("generate_from_requirement failed: %s", e)
-        return {
-            "format": format,
-            "output": {"raw": f"LLM generation failed: {str(e)}. See server logs."},
-            "meta": {"provider": provider, "error": str(e)},
+    except Exception:
+        logger.exception("LLM generation failed")
+        return ""
+
+
+# -------------------------
+# STRUCTURED OUTPUT (WITH MEMORY)
+# -------------------------
+def generate_structured_testcases(requirement: str):
+
+    # 🔥 MEMORY RETRIEVAL
+    past = retrieve_similar(requirement)
+
+    context = ""
+    if past:
+        print("🔥 MEMORY USED:", past)  # demo proof
+        context = "\n\nSimilar past requirements:\n" + "\n".join(past)
+
+    enhanced_requirement = requirement + context
+
+    raw = _generate(enhanced_requirement, "json")
+
+    if not raw:
+        return fallback_testcases(requirement)
+
+    try:
+        parsed = try_parse_json(raw)
+
+        testcases = parsed.get("test_cases", [])
+
+        if not isinstance(testcases, list) or not testcases:
+            return fallback_testcases(requirement)
+
+        normalized = []
+        for i, tc in enumerate(testcases, start=1):
+            normalized.append({
+                "id": f"TC_{i:03}",
+                "title": tc.get("description", "No title"),
+                "steps": tc.get("steps", []),
+                "expected": tc.get("expected", ""),
+                "type": tc.get("type", "General"),
+            })
+
+        return normalized
+
+    except Exception:
+        logger.warning("JSON parsing failed")
+        return fallback_testcases(requirement)
+
+
+# -------------------------
+# FORMATTED OUTPUT
+# -------------------------
+def generate_formatted_output(requirement: str, fmt: str):
+    raw = _generate(requirement, fmt)
+    return raw if raw else "No output generated"
+
+
+# -------------------------
+# FALLBACK
+# -------------------------
+def fallback_testcases(requirement: str):
+    return [
+        {
+            "id": "TC_001",
+            "title": f"Basic test for: {requirement[:30]}",
+            "steps": ["Execute main flow"],
+            "expected": "System behaves correctly",
+            "type": "Positive",
         }
+    ]
