@@ -81,39 +81,145 @@ Requirement:
     elif fmt == "gherkin":
         return f"""{SYSTEM_PROMPT}
 
-Generate a Test Summary followed by BDD-style test cases in Gherkin format.
+Generate a COMPLETE QA deliverable in Gherkin format for the following requirement.
+
+Requirement:
+{{user_input}}
+
+MANDATORY OUTPUT STRUCTURE:
+
+1. Test Summary
+
+2. Feature: <Feature Name>
+
+3. BDD Scenarios in strict numbered Gherkin format
+
+4. Supporting sections after scenarios:
+   - Simplified Requirement Traceability Matrix
+   - Optimized Gherkin Design
+   - Risk-Based Testing View
+   - Test Data Strategy
+   - Exit Criteria
 
 STRICT GHERKIN RULES:
 
-Each scenario MUST follow this structure:
+Use only the following scenario formats.
 
-Feature: <Feature Name>
+STANDARD SCENARIO FORMAT:
 
+@<tag1> @<tag2> @<tag3>
 Scenario_01: <Scenario Title>
 Given <initial context>
 
+
 When <first user action>
-And <additional user actions if needed>
+And <additional user action if needed>
 
 Then <expected result>
-Then <additional expected results if needed>
+Then <additional expected result if needed>
+
+SCENARIO OUTLINE FORMAT:
+
+@<tag1> @<tag2> @<tag3>
+Scenario_Outline_01: <Scenario Title>
+Given <initial context>
+And <additional precondition if needed>
+
+When <first user action using "<placeholder>">
+And <additional user action if needed>
+
+Then <expected result>
+Then <additional expected result if needed>
+
+Examples:
+| column_1 | column_2 | column_3 |
 
 IMPORTANT RULES:
 
 1. Each scenario must be numbered sequentially.
-2. Use Scenario_01, Scenario_02, Scenario_03 ... etc.
-3. Do NOT use plain "Scenario:" without numbering.
-4. Use **When** for the first action.
-5. Use **And** only for additional actions after When.
-6. Use **Then** for every expected result.
-7. NEVER use **And** after Then.
-8. Do NOT use numbered steps inside scenarios.
-9. Ensure coverage includes positive, negative, and edge scenarios.
+2. Use Scenario_01, Scenario_02, Scenario_03 for normal scenarios.
+3. Use Scenario_Outline_01, Scenario_Outline_02 for scenario outlines.
+4. Never use plain "Scenario:" without numbering.
+5. Tags must appear immediately above the scenario title.
+6. Use Given for the initial context.
+7. Use And after Given only for additional preconditions.
+8. Use When for the first action.
+9. Use And after When only for additional actions.
+10. Use Then for every expected result.
+11. Never use And after Then.
+12. Do not use numbered steps inside scenarios.
+13. Keep steps atomic, clear, and execution-ready.
+14. Ensure coverage includes positive, negative, and edge scenarios.
+15. If Scenario Outline is used, remove duplicate or redundant example rows.
+16. Do not generate excessive scenarios. Keep the output concise and maintainable.
+17. Maximum 10 scenarios total.
+18. Maximum 2 scenario outlines total.
 
-Example:
+MANDATORY QA ENHANCEMENTS:
+
+Enhance the QA deliverable with the following:
+
+1. Simplified Requirement Traceability Matrix
+   - Provide concise mapping: Requirement -> Scenario IDs
+
+2. Optimize Gherkin Design
+   - Use Scenario Outline where applicable
+   - Reduce redundancy
+   - Improve maintainability
+
+3. Risk-Based Testing View
+   - Clearly identify P0 scenarios
+   - Highlight critical flows if testing time is limited
+
+4. Test Data Strategy
+   - Define data creation
+   - Define data management
+   - Define cleanup approach
+   - Include environment considerations
+
+5. Exit Criteria
+   - Define clear pass/fail conditions for release readiness
+
+ADVANCED QA REQUIREMENTS:
+
+1. Add scenario tags directly in Gherkin:
+   - @P0 or @P1
+   - @Smoke or @Regression
+   - Optional domain tags such as @API, @Validation, @BusinessLogic, @EdgeCase, @System
+
+2. Ensure minimal but essential business logic coverage where relevant:
+   - account lock
+   - session handling
+   - authentication validation
+
+3. Add lightweight API validation scenarios where relevant:
+   - one success scenario
+   - one failure scenario
+
+4. Add at least one system-level edge case where relevant:
+   - rate limiting
+   - concurrent login
+   - session timeout
+
+IMPORTANT CONSTRAINTS:
+
+- Keep output concise, practical, and maintainable.
+- Do not over-engineer.
+- Do not regenerate an unnecessarily large test suite.
+- Focus on execution-ready QA design.
+- Balance coverage with simplicity.
+- Use consistent error messages and scenario naming.
+- Do not include commentary inside scenario steps.
+- For API steps, avoid long inline JSON payloads unless necessary for clarity.
+
+REFERENCE EXAMPLE:
+
+Test Summary:
+This test suite validates the login feature across positive, negative, and edge scenarios.
 
 Feature: User Login
 
+@P0 @Smoke @Regression
 Scenario_01: Successful login with valid credentials
 Given I am on the login page
 When I enter a valid email address
@@ -122,13 +228,21 @@ And I click the Login button
 Then I should be redirected to the dashboard
 Then I should see a welcome message
 
-Scenario_02: Login attempt with incorrect password
+@P0 @Regression
+Scenario_Outline_01: Login attempt with invalid credentials
 Given I am on the login page
-When I enter a valid email address
-And I enter an incorrect password
+When I enter "<email>"
+And I enter "<password>"
 And I click the Login button
-Then I should see an error message
+Then I should see an error message "<error_message>"
 Then I should remain on the login page
+
+Examples:
+| email                | password       | error_message                    |
+| wrong@example.com    | ValidPass123!  | Invalid email or password.       |
+| valid@example.com    | WrongPass123!  | Invalid email or password.       |
+|                     | ValidPass123!  | Email cannot be empty.           |
+| valid@example.com    |               | Password cannot be empty.        |
 
 
 Requirement:
