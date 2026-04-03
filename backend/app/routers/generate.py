@@ -9,7 +9,7 @@ from ..models import TestRun
 from ..dependencies import get_current_user
 from ..schemas import GenerateRequest
 from ..llm_client import generate_formatted_output
-from ..memory import store_memory
+from ..memory import store_memory, retrieve_learning  # 🔥 NEW
 
 router = APIRouter()
 
@@ -18,12 +18,6 @@ router = APIRouter()
 # 🔥 GHERKIN INTELLIGENCE LAYER (SAFE)
 # -------------------------
 def enrich_requirement_for_gherkin(requirement: str):
-    """
-    Adds lightweight intelligence BEFORE your GHERKIN prompt.
-    DOES NOT modify your prompt.
-    ONLY improves input quality.
-    """
-
     return f"""
 Requirement:
 {requirement}
@@ -52,27 +46,54 @@ QA Intelligence Instructions:
 
 
 # -------------------------
-# 🔥 AGENT PIPELINE (UPDATED)
+# 🔥 AGENT PIPELINE (SELF-IMPROVING + LEARNING)
 # -------------------------
 def run_generation_pipeline(requirement: str, output_format: str):
-    """
-    Central orchestration layer.
-    Enables future multi-step agent upgrades.
-    Coverage is always calculated from structured testcases,
-    regardless of final output format.
-    """
 
-    # 🔥 Inject intelligence ONLY for GHERKIN
     if output_format == "gherkin":
         enriched_requirement = enrich_requirement_for_gherkin(requirement)
     else:
         enriched_requirement = requirement
 
-    # 🔥 Always generate structured testcases for coverage
-    structured_testcases = generate_testcases(enriched_requirement)
-    coverage = simple_coverage(structured_testcases, requirement)
+    # -------------------------
+    # 🔥 PASS 0: LEARN FROM PAST RUNS
+    # -------------------------
+    learned_gaps = retrieve_learning(requirement)
 
-    # ---------------- JSON FLOW ----------------
+    if learned_gaps:
+        print("\n🧠 Applying learned gaps from memory...\n")
+
+    # -------------------------
+    # PASS 1: INITIAL GENERATION
+    # -------------------------
+    structured_testcases = generate_testcases(
+        enriched_requirement,
+        missing_scenarios=learned_gaps
+    )
+
+    coverage = simple_coverage(structured_testcases, requirement)
+    missing = coverage.get("missing_scenarios", [])
+
+    # -------------------------
+    # PASS 2: SELF-IMPROVEMENT (CURRENT RUN)
+    # -------------------------
+    if missing and len(missing) > 0:
+        print("\n🔁 Improving testcases using current missing scenarios...\n")
+
+        improved_testcases = generate_testcases(
+            enriched_requirement,
+            missing_scenarios=missing
+        )
+
+        improved_coverage = simple_coverage(improved_testcases, requirement)
+
+        if improved_coverage.get("coverage_percent", 0) > coverage.get("coverage_percent", 0):
+            structured_testcases = improved_testcases
+            coverage = improved_coverage
+
+    # -------------------------
+    # OUTPUT HANDLING
+    # -------------------------
     if output_format == "json":
         return {
             "type": "json",
@@ -80,7 +101,6 @@ def run_generation_pipeline(requirement: str, output_format: str):
             "coverage": coverage
         }
 
-    # ---------------- NON-JSON (GHERKIN / EXCEL / TEXT) ----------------
     else:
         formatted_output = generate_formatted_output(
             enriched_requirement,
@@ -111,7 +131,6 @@ def generate(
 
         user_id = hash(user) % 10000
 
-        # 🔥 Use pipeline
         result = run_generation_pipeline(
             requirement,
             req.output_format
@@ -119,18 +138,25 @@ def generate(
 
         coverage = result.get("coverage")
 
+        # 🔥 CLEAN METRICS PRINT
+        if coverage:
+            print("\n===== QA METRICS =====")
+            print(f"COVERAGE: {coverage.get('coverage_percent')}%")
+            print(f"QA SCORE: {coverage.get('qa_score')}/100")
+            print(f"RULE SCORE: {coverage.get('rule_score')}/100")
+            print("======================\n")
+
         # ---------------- JSON FLOW ----------------
         if result["type"] == "json":
             testcases = result["data"]
 
-            print("\n===== COVERAGE DEBUG =====")
-            print("Coverage:", coverage)
-            print("==========================\n")
+            # 🔥 STORE WITH LEARNING
+            store_memory(
+                requirement,
+                json.dumps(testcases),
+                missing_scenarios=coverage.get("missing_scenarios")
+            )
 
-            # MEMORY
-            store_memory(requirement, json.dumps(testcases))
-
-            # DB STORE
             run = TestRun(
                 user_id=user_id,
                 requirement=requirement,
@@ -144,21 +170,25 @@ def generate(
 
             return {
                 "testcases": testcases,
-                "coverage": coverage
+                "coverage_percent": coverage.get("coverage_percent"),
+                "qa_score": coverage.get("qa_score"),
+                "rule_score": coverage.get("rule_score"),
+                "qa_details": coverage.get("qa_details"),
+                "rule_details": coverage.get("rule_details"),
+                "missing_scenarios": coverage.get("missing_scenarios")
             }
 
         # ---------------- NON-JSON FLOW ----------------
         else:
             formatted_output = result["data"]
 
-            print("\n===== COVERAGE DEBUG =====")
-            print("Coverage:", coverage)
-            print("==========================\n")
+            # 🔥 STORE WITH LEARNING
+            store_memory(
+                requirement,
+                formatted_output,
+                missing_scenarios=coverage.get("missing_scenarios")
+            )
 
-            # MEMORY
-            store_memory(requirement, formatted_output)
-
-            # DB STORE
             run = TestRun(
                 user_id=user_id,
                 requirement=requirement,

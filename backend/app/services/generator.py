@@ -43,13 +43,56 @@ def add_ids(testcases):
 
 
 # -------------------------
-# 🔥 NEW: REQUIREMENT INTELLIGENCE LAYER
+# 🔥 CLEAN + MERGE SCENARIOS (CRITICAL FIX)
 # -------------------------
-def enrich_requirement(requirement: str):
+def prepare_missing_scenarios(missing_scenarios):
+    """
+    Cleans + deduplicates missing scenarios before injecting into LLM.
+    Prevents noisy prompts and repeated ideas.
+    """
+
+    if not missing_scenarios:
+        return []
+
+    cleaned = []
+
+    for sc in missing_scenarios:
+        sc = sc.strip()
+
+        if not sc:
+            continue
+
+        # remove noise
+        if "here are" in sc.lower():
+            continue
+        if sc.startswith("**"):
+            continue
+        if len(sc) < 10:
+            continue
+
+        cleaned.append(sc)
+
+    # remove duplicates + limit size
+    return list(set(cleaned))[:5]
+
+
+# -------------------------
+# 🔥 REQUIREMENT INTELLIGENCE LAYER
+# -------------------------
+def enrich_requirement(requirement: str, missing_scenarios=None):
     """
     Adds structured QA thinking BEFORE LLM call.
-    This improves both JSON and GHERKIN indirectly.
+    Injects CLEANED missing scenarios for controlled self-improvement.
     """
+
+    missing_block = ""
+
+    cleaned_missing = prepare_missing_scenarios(missing_scenarios)
+
+    if cleaned_missing:
+        missing_block = "\nMissing Scenarios to Improve Coverage:\n"
+        for m in cleaned_missing:
+            missing_block += f"- {m}\n"
 
     return f"""
 Requirement:
@@ -65,17 +108,19 @@ QA Analysis Instructions:
 Ensure:
 - Coverage includes UI + API if applicable
 - Include real-world failure conditions
-- Avoid generic scenarios
+- Avoid generic or duplicate scenarios
+
+{missing_block}
 """
 
 
 # -------------------------
-# 🔥 MAIN GENERATOR (UPGRADED)
+# 🔥 MAIN GENERATOR (STABLE + SELF-IMPROVING)
 # -------------------------
-def generate_testcases(requirement: str):
+def generate_testcases(requirement: str, missing_scenarios=None):
     try:
-        # 🔥 NEW: enrich requirement BEFORE sending to LLM
-        enriched_requirement = enrich_requirement(requirement)
+        # 🔥 Controlled enrichment (no noise injection)
+        enriched_requirement = enrich_requirement(requirement, missing_scenarios)
 
         testcases = generate_structured_testcases(enriched_requirement)
 
