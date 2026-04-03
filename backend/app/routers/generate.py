@@ -52,12 +52,14 @@ QA Intelligence Instructions:
 
 
 # -------------------------
-# 🔥 AGENT PIPELINE (NEW)
+# 🔥 AGENT PIPELINE (UPDATED)
 # -------------------------
 def run_generation_pipeline(requirement: str, output_format: str):
     """
     Central orchestration layer.
     Enables future multi-step agent upgrades.
+    Coverage is always calculated from structured testcases,
+    regardless of final output format.
     """
 
     # 🔥 Inject intelligence ONLY for GHERKIN
@@ -66,14 +68,15 @@ def run_generation_pipeline(requirement: str, output_format: str):
     else:
         enriched_requirement = requirement
 
+    # 🔥 Always generate structured testcases for coverage
+    structured_testcases = generate_testcases(enriched_requirement)
+    coverage = simple_coverage(structured_testcases, requirement)
+
     # ---------------- JSON FLOW ----------------
     if output_format == "json":
-        testcases = generate_testcases(enriched_requirement)
-        coverage = simple_coverage(testcases, requirement)
-
         return {
             "type": "json",
-            "data": testcases,
+            "data": structured_testcases,
             "coverage": coverage
         }
 
@@ -86,7 +89,8 @@ def run_generation_pipeline(requirement: str, output_format: str):
 
         return {
             "type": "formatted",
-            "data": formatted_output
+            "data": formatted_output,
+            "coverage": coverage
         }
 
 
@@ -107,16 +111,17 @@ def generate(
 
         user_id = hash(user) % 10000
 
-        # 🔥 NEW: Use pipeline
+        # 🔥 Use pipeline
         result = run_generation_pipeline(
             requirement,
             req.output_format
         )
 
+        coverage = result.get("coverage")
+
         # ---------------- JSON FLOW ----------------
         if result["type"] == "json":
             testcases = result["data"]
-            coverage = result["coverage"]
 
             print("\n===== COVERAGE DEBUG =====")
             print("Coverage:", coverage)
@@ -131,7 +136,7 @@ def generate(
                 requirement=requirement,
                 output=json.dumps(testcases),
                 format="json",
-                coverage_percent=coverage.get("coverage_percent")
+                coverage_percent=coverage.get("coverage_percent") if coverage else None
             )
 
             db.add(run)
@@ -146,6 +151,10 @@ def generate(
         else:
             formatted_output = result["data"]
 
+            print("\n===== COVERAGE DEBUG =====")
+            print("Coverage:", coverage)
+            print("==========================\n")
+
             # MEMORY
             store_memory(requirement, formatted_output)
 
@@ -155,7 +164,7 @@ def generate(
                 requirement=requirement,
                 output=formatted_output,
                 format=req.output_format,
-                coverage_percent=None
+                coverage_percent=coverage.get("coverage_percent") if coverage else None
             )
 
             db.add(run)

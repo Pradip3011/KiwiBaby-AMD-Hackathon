@@ -89,8 +89,6 @@ def is_semantically_covered(scenario, testcases, threshold=0.4):
     scores = util.cos_sim(scenario_emb, tc_embs)
     max_score = scores.max().item()
 
-    print(f"[COVERAGE DEBUG] Scenario: {scenario} | Score: {max_score:.3f}")
-
     return max_score >= threshold
 
 
@@ -127,6 +125,7 @@ def simple_coverage(testcases, requirement):
     scenarios = enforce_qa_scenarios(scenarios)
 
     if not testcases:
+        print("[COVERAGE] 0%")
         return {
             "coverage_percent": 0,
             "covered_scenarios": [],
@@ -160,9 +159,12 @@ def simple_coverage(testcases, requirement):
 
     # 🔥 STEP 5: scoring
     qa_score = max(0, 100 - (len(qa_gaps) * 20))
+    coverage_percent = round((len(covered) / total) * 100, 2)
+
+    print(f"[COVERAGE] {coverage_percent}%")
 
     return {
-        "coverage_percent": round((len(covered) / total) * 100, 2),
+        "coverage_percent": coverage_percent,
         "covered_scenarios": covered,
         "missing_scenarios": missing,
         "total_scenarios": total,
