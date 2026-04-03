@@ -1,6 +1,9 @@
 from ..llm_client import generate_structured_testcases
 
 
+# -------------------------
+# FALLBACK
+# -------------------------
 def fallback_testcases(requirement: str):
     return [
         {
@@ -12,6 +15,9 @@ def fallback_testcases(requirement: str):
     ]
 
 
+# -------------------------
+# VALIDATION
+# -------------------------
 def validate_testcases(testcases):
     valid = []
 
@@ -27,15 +33,51 @@ def validate_testcases(testcases):
     return valid
 
 
+# -------------------------
+# ID ASSIGNMENT
+# -------------------------
 def add_ids(testcases):
     for i, tc in enumerate(testcases, start=1):
         tc["id"] = f"TC_{i:03}"
     return testcases
 
 
+# -------------------------
+# 🔥 NEW: REQUIREMENT INTELLIGENCE LAYER
+# -------------------------
+def enrich_requirement(requirement: str):
+    """
+    Adds structured QA thinking BEFORE LLM call.
+    This improves both JSON and GHERKIN indirectly.
+    """
+
+    return f"""
+Requirement:
+{requirement}
+
+QA Analysis Instructions:
+- Identify core user actions
+- Identify validation rules
+- Identify failure scenarios
+- Identify edge cases
+- Identify system-level risks (session, concurrency, rate limiting)
+
+Ensure:
+- Coverage includes UI + API if applicable
+- Include real-world failure conditions
+- Avoid generic scenarios
+"""
+
+
+# -------------------------
+# 🔥 MAIN GENERATOR (UPGRADED)
+# -------------------------
 def generate_testcases(requirement: str):
     try:
-        testcases = generate_structured_testcases(requirement)
+        # 🔥 NEW: enrich requirement BEFORE sending to LLM
+        enriched_requirement = enrich_requirement(requirement)
+
+        testcases = generate_structured_testcases(enriched_requirement)
 
         testcases = validate_testcases(testcases)
         testcases = add_ids(testcases)
