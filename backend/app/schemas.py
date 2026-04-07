@@ -11,14 +11,15 @@ OutputFormat = Literal["json", "gherkin", "excel", "text"]
 
 
 # -------------------------
-# AUTH
+# AUTH (🔥 UPDATED)
 # -------------------------
 class LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1)
+    email: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=1)
 
 
 # -------------------------
-# Generate (NEW ROUTER)
+# Generate
 # -------------------------
 class GenerateRequest(BaseModel):
     requirement: str = Field(..., min_length=1)
@@ -57,7 +58,7 @@ class TestCaseOutput(BaseModel):
 
 
 # -------------------------
-# Coverage response (NEW)
+# Coverage response
 # -------------------------
 class CoverageResponse(BaseModel):
     coverage_percent: float
@@ -67,7 +68,7 @@ class CoverageResponse(BaseModel):
 
 
 # -------------------------
-# Final API response (NEW)
+# Final API response
 # -------------------------
 class GenerateResponse(BaseModel):
     testcases: List[Dict[str, Any]]
@@ -84,7 +85,7 @@ class HistoryItem(BaseModel):
 
 
 # -------------------------
-# Batch output (optional)
+# Batch output
 # -------------------------
 class RequirementOutput(BaseModel):
     requirement: str

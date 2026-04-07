@@ -1,21 +1,57 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 import json
+import os
+
+from jose import JWTError, jwt
+from dotenv import load_dotenv
 
 from ..database import get_db
 from ..services.generator import generate_testcases
 from ..services.coverage import simple_coverage
 from ..models import TestRun
-from ..dependencies import get_current_user
 from ..schemas import GenerateRequest
 from ..llm_client import generate_formatted_output
-from ..memory import store_memory, retrieve_learning  # 🔥 NEW
+from ..memory import store_memory, retrieve_learning
 
 router = APIRouter()
 
+# 🔐 LOAD ENV
+load_dotenv()
+
+# 🔐 JWT CONFIG (FROM ENV)
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = "HS256"
+
 
 # -------------------------
-# 🔥 GHERKIN INTELLIGENCE LAYER (SAFE)
+# 🔐 AUTH VALIDATION
+# -------------------------
+def get_current_user(authorization: str = Header(default=None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    # 🔐 STRICT BEARER FORMAT CHECK
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid Authorization format")
+
+    token = authorization.split(" ")[1]
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        email = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+
+        return email
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# -------------------------
+# 🔥 GHERKIN INTELLIGENCE LAYER
 # -------------------------
 def enrich_requirement_for_gherkin(requirement: str):
     return f"""
@@ -46,7 +82,7 @@ QA Intelligence Instructions:
 
 
 # -------------------------
-# 🔥 AGENT PIPELINE (SELF-IMPROVING + LEARNING)
+# 🔥 AGENT PIPELINE
 # -------------------------
 def run_generation_pipeline(requirement: str, output_format: str):
 
@@ -55,17 +91,13 @@ def run_generation_pipeline(requirement: str, output_format: str):
     else:
         enriched_requirement = requirement
 
-    # -------------------------
-    # 🔥 PASS 0: LEARN FROM PAST RUNS
-    # -------------------------
+    # PASS 0: MEMORY LEARNING
     learned_gaps = retrieve_learning(requirement)
 
     if learned_gaps:
         print("\n🧠 Applying learned gaps from memory...\n")
 
-    # -------------------------
-    # PASS 1: INITIAL GENERATION
-    # -------------------------
+    # PASS 1
     structured_testcases = generate_testcases(
         enriched_requirement,
         missing_scenarios=learned_gaps
@@ -74,10 +106,8 @@ def run_generation_pipeline(requirement: str, output_format: str):
     coverage = simple_coverage(structured_testcases, requirement)
     missing = coverage.get("missing_scenarios", [])
 
-    # -------------------------
-    # PASS 2: SELF-IMPROVEMENT (CURRENT RUN)
-    # -------------------------
-    if missing and len(missing) > 0:
+    # PASS 2: IMPROVEMENT
+    if missing:
         print("\n🔁 Improving testcases using current missing scenarios...\n")
 
         improved_testcases = generate_testcases(
@@ -91,16 +121,13 @@ def run_generation_pipeline(requirement: str, output_format: str):
             structured_testcases = improved_testcases
             coverage = improved_coverage
 
-    # -------------------------
-    # OUTPUT HANDLING
-    # -------------------------
+    # OUTPUT
     if output_format == "json":
         return {
             "type": "json",
             "data": structured_testcases,
             "coverage": coverage
         }
-
     else:
         formatted_output = generate_formatted_output(
             enriched_requirement,
@@ -115,7 +142,7 @@ def run_generation_pipeline(requirement: str, output_format: str):
 
 
 # -------------------------
-# ROUTE
+# 🔥 ROUTE (SECURED)
 # -------------------------
 @router.post("/generate")
 def generate(
@@ -138,7 +165,6 @@ def generate(
 
         coverage = result.get("coverage")
 
-        # 🔥 CLEAN METRICS PRINT
         if coverage:
             print("\n===== QA METRICS =====")
             print(f"COVERAGE: {coverage.get('coverage_percent')}%")
@@ -146,11 +172,10 @@ def generate(
             print(f"RULE SCORE: {coverage.get('rule_score')}/100")
             print("======================\n")
 
-        # ---------------- JSON FLOW ----------------
+        # JSON
         if result["type"] == "json":
             testcases = result["data"]
 
-            # 🔥 STORE WITH LEARNING
             store_memory(
                 requirement,
                 json.dumps(testcases),
@@ -178,11 +203,10 @@ def generate(
                 "missing_scenarios": coverage.get("missing_scenarios")
             }
 
-        # ---------------- NON-JSON FLOW ----------------
+        # NON JSON
         else:
             formatted_output = result["data"]
 
-            # 🔥 STORE WITH LEARNING
             store_memory(
                 requirement,
                 formatted_output,

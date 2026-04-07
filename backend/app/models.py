@@ -4,16 +4,24 @@ from .database import Base
 
 
 # -------------------------
-# USER TABLE
+# USER TABLE (🔥 UPDATED)
 # -------------------------
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, nullable=False)
+
+    # 🔥 Use email instead of username
+    email = Column(String, unique=True, nullable=False, index=True)
+
+    # 🔥 Store hashed password (NOT plain text)
+    hashed_password = Column(String, nullable=False)
+
+    # 🔥 Track creation
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     def __repr__(self):
-        return f"<User id={self.id} username={self.username}>"
+        return f"<User id={self.id} email={self.email}>"
 
 
 # -------------------------
@@ -33,10 +41,10 @@ class TestRun(Base):
     # Output (JSON / Gherkin / Text)
     output = Column(Text, nullable=False)
 
-    # 🔥 NEW: format tracking
+    # Format tracking
     format = Column(String, nullable=False)
 
-    # 🔥 OPTIONAL: coverage tracking (useful for analytics/demo)
+    # Coverage tracking
     coverage_percent = Column(Float, nullable=True)
 
     # Timestamp

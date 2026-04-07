@@ -7,34 +7,67 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- SEO / Demo polish -->
-    <meta name="description" content="AI-powered test case generation platform with coverage analysis" />
+    <meta
+      name="description"
+      content="Self-improving AI QA system for generating, validating, and decisioning test cases with semantic coverage, gap detection, and automated QA decisioning."
+    />
 
-    <!-- App title -->
-    <title>AI Test Case Agent</title>
+    <!-- 🔥 PRODUCT TITLE (CONSISTENT WITH YOUR POSITIONING) -->
+    <title>Self-Improving Semantic QA Decision Engine</title>
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/vite.svg" />
 
-    <!-- Google Font (modern UI feel) -->
+    <!-- Google Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
     <!-- Base styling -->
     <style>
       body {
         margin: 0;
-        background: #0f172a; /* match your dark UI */
+        background: #0f172a;
         font-family: 'Inter', Arial, sans-serif;
+        color: #e2e8f0;
       }
 
       #root {
         height: 100vh;
       }
+
+      /* 🔥 Optional subtle loader text (visible before React loads) */
+      .app-loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        flex-direction: column;
+        font-size: 14px;
+        color: #94a3b8;
+      }
+
+      .app-loading strong {
+        font-size: 18px;
+        color: #e2e8f0;
+      }
     </style>
   </head>
 
   <body>
-    <!-- React mounts here -->
-    <div id="root"></div>
+    <!-- 🔥 Visible before React mounts -->
+    <div id="root">
+      <div class="app-loading">
+        <strong>Semantic QA Decision Engine</strong>
+        <p>Initializing intelligent QA system...</p>
+      </div>
+    </div>
+
+    <!-- Fallback if JS disabled -->
+    <noscript>
+      <div style="padding: 20px; text-align: center">
+        <h2>Semantic QA Decision Engine</h2>
+        <p>This application requires JavaScript to run.</p>
+      </div>
+    </noscript>
 
     <!-- React entry -->
     <script type="module" src="/src/main.jsx"></script>

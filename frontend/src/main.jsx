@@ -9,8 +9,11 @@ if (!rootElement) {
   throw new Error('Root element not found');
 }
 
+// 🔥 Check auth token (future-proofing)
+const token = localStorage.getItem('token');
+
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <App />
+    <App key={token ? 'auth' : 'guest'} />
   </React.StrictMode>,
 );

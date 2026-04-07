@@ -1,21 +1,40 @@
+# -------------------------
 # Python
+# -------------------------
 venv/
 .venv/
-env/
 __pycache__/
 *.pyc
 *.pyo
 
-# Environment variables
+# -------------------------
+# Environment variables (🔥 CRITICAL)
+# -------------------------
 .env
+.env.*
+backend/.env
+frontend/.env
 
+# -------------------------
+# Secrets / Keys (extra safety)
+# -------------------------
+*.pem
+*.key
+
+# -------------------------
 # Node
+# -------------------------
 node_modules/
 frontend/node_modules/
 
+# -------------------------
 # Logs
+# -------------------------
 *.log
 
+# -------------------------
 # OS files
+# -------------------------
 .DS_Store
 Thumbs.db
+backend/mydatabase.db

@@ -12,12 +12,13 @@ function getToken() {
 // -------------------------
 // LOGIN
 // -------------------------
-export async function login(username) {
+//
+export async function login(email, password) {
   try {
     const res = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ email, password }), // 🔥 FIX
     });
 
     const data = await res.json();
@@ -36,7 +37,7 @@ export async function login(username) {
 }
 
 // -------------------------
-// GENERATE (🔥 FIXED)
+// GENERATE (🔥 NORMALIZED RESPONSE)
 // -------------------------
 export async function generate(requirement, format = 'json') {
   try {
@@ -44,7 +45,7 @@ export async function generate(requirement, format = 'json') {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: getToken() || '',
+        Authorization: getToken() ? `Bearer ${getToken()}` : '',
       },
       body: JSON.stringify({
         requirement,
@@ -52,20 +53,36 @@ export async function generate(requirement, format = 'json') {
       }),
     });
 
-    let data;
+    let raw;
 
-    // 🔥 KEY FIX: handle JSON vs non-JSON properly
     if (format === 'json') {
-      data = await res.json();
+      raw = await res.json();
     } else {
-      data = await res.text();
+      raw = await res.text();
     }
 
     if (!res.ok) {
-      throw new Error(typeof data === 'string' ? data : data.detail || 'Backend error');
+      throw new Error(typeof raw === 'string' ? raw : raw.detail || 'Backend error');
     }
 
-    return data;
+    // 🔥 Normalize response for UI
+    if (format === 'json') {
+      return {
+        testcases: raw.testcases || [],
+        metrics: {
+          coverage: raw.coverage_percent,
+          qaScore: raw.qa_score,
+          ruleScore: raw.rule_score,
+        },
+        details: {
+          qa: raw.qa_details || {},
+          rule: raw.rule_details || {},
+        },
+        missing: raw.missing_scenarios || [],
+      };
+    }
+
+    return raw;
   } catch (err) {
     console.error('Generate Error:', err);
     throw err;

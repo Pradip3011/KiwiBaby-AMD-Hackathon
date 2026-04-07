@@ -4,8 +4,8 @@ GLOBAL
 body {
   margin: 0;
   font-family: 'Inter', Arial, sans-serif;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: #ffffff; /* 🔥 LIGHT */
+  color: #1f2937;
 }
 
 /* -------------------------
@@ -29,23 +29,26 @@ HEADER
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 20px;
-  background: #020617;
-  border-bottom: 1px solid #1e293b;
+  padding: 14px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 /* -------------------------
-CHAT SECTION
+CHAT SECTION (CENTERED FEEL)
 ------------------------- */
 .chat-section {
-  flex: 3;
+  flex: 1;
   display: flex;
   flex-direction: column;
+  max-width: 800px; /* 🔥 CENTERED CHAT */
+  margin: 0 auto;
 }
 
 /* -------------------------
@@ -54,13 +57,13 @@ MESSAGES
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 20px 10px;
 }
 
 /* Message row */
 .message {
   display: flex;
-  margin-bottom: 15px;
+  margin-bottom: 16px;
 }
 
 .message.user {
@@ -72,81 +75,69 @@ MESSAGES
 }
 
 /* -------------------------
-BUBBLE
+BUBBLE (CHATGPT STYLE)
 ------------------------- */
 .bubble {
   max-width: 70%;
-  padding: 15px;
+  padding: 14px;
   border-radius: 12px;
-  background: #1e293b;
-  position: relative;
+  font-size: 14px;
+  line-height: 1.6;
+  background: #f3f4f6;
 }
 
 .message.user .bubble {
-  background: #2563eb;
-  color: white;
+  background: #e5e7eb;
 }
 
 .message.assistant .bubble {
-  background: #1e293b;
+  background: #f9fafb;
 }
 
 /* -------------------------
 TEXT OUTPUT
 ------------------------- */
-.bubble pre {
-  margin: 0;
-  white-space: pre-wrap;
-  font-family: Consolas, Monaco, monospace;
-}
-
-/* -------------------------
-COVERAGE BADGE (🔥 IMPORTANT)
-------------------------- */
-.coverage {
-  font-size: 12px;
-  font-weight: bold;
-  margin-bottom: 8px;
-  color: #22c55e;
+.bubble div {
+  font-family: system-ui, sans-serif;
 }
 
 /* -------------------------
 COPY BUTTON
 ------------------------- */
 .copy-btn {
-  margin-top: 10px;
-  font-size: 12px;
-  padding: 6px 10px;
-  background: #334155;
+  margin-top: 8px;
+  font-size: 11px;
+  padding: 5px 8px;
+  background: #e5e7eb;
   border: none;
   border-radius: 5px;
-  color: white;
+  color: #374151;
   cursor: pointer;
 }
 
 .copy-btn:hover {
-  background: #475569;
+  background: #d1d5db;
 }
 
 /* -------------------------
-INPUT AREA
+INPUT AREA (🔥 CHATGPT STYLE)
 ------------------------- */
 .input-area {
-  border-top: 1px solid #1e293b;
   padding: 15px;
-  background: #020617;
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
 }
 
 .input-area textarea {
   width: 100%;
-  height: 90px;
+  height: 70px;
   resize: none;
-  padding: 10px;
+  padding: 12px;
   font-size: 14px;
-  border-radius: 6px;
-  border: none;
-  background: #1e293b;
-  color: white;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
 }
 
 /* -------------------------
@@ -160,46 +151,37 @@ CONTROLS
 
 select {
   padding: 8px;
-  border-radius: 5px;
-  background: #1e293b;
-  color: white;
-  border: none;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
 }
 
 button {
   padding: 8px 16px;
-  background: #3b82f6;
-  border: none;
+  background: #111827; /* 🔥 subtle dark button */
   color: white;
   border-radius: 6px;
+  border: none;
   cursor: pointer;
 }
 
 button:hover {
-  background: #2563eb;
+  background: #374151;
 }
 
 /* -------------------------
-HISTORY PANEL (🔥 BIG IMPACT)
+HISTORY PANEL (MINIMAL)
 ------------------------- */
 .history-panel {
-  flex: 1;
-  background: #020617;
-  border-left: 1px solid #1e293b;
+  width: 280px;
+  border-left: 1px solid #e5e7eb;
   padding: 15px;
-  overflow-y: auto;
+  background: #fafafa;
 }
 
 .history-panel h3 {
   margin-top: 0;
-}
-
-.history-item {
-  background: #1e293b;
-  padding: 10px;
-  border-radius: 6px;
-  margin-bottom: 10px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* -------------------------
@@ -216,15 +198,30 @@ LOGIN SCREEN
 }
 
 .login-container input {
-  padding: 10px;
-  border-radius: 6px;
-  border: none;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
 }
 
 .login-container button {
-  padding: 10px;
-  background: #3b82f6;
-  border: none;
+  padding: 12px;
+  background: #111827;
   color: white;
-  border-radius: 6px;
+  border-radius: 8px;
+}
+
+/* -------------------------
+SIGNATURE
+------------------------- */
+.signature {
+  position: fixed;
+  bottom: 10px;
+  right: 15px;
+  font-size: 12px;
+  opacity: 0.5;
+  color: #6b7280;
+}
+
+.signature:hover {
+  opacity: 1;
 }

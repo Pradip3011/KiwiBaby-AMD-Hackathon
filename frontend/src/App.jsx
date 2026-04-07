@@ -9,7 +9,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   const [user, setUser] = useState(null);
-  const [username, setUsername] = useState('');
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const [loginDisabled, setLoginDisabled] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
   const bottomRef = useRef(null);
 
@@ -17,23 +22,71 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (cooldown <= 0) return;
+
+    const timer = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          setLoginDisabled(false);
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
   // ---------------- LOGIN ----------------
   async function handleLogin() {
-    if (!username.trim()) {
-      alert('Enter username');
+    if (!email.trim() || !password.trim()) {
+      alert('Enter email and password');
       return;
     }
 
+    if (loginDisabled) return;
+
     try {
-      const res = await login(username);
-
-      // Save token
+      const res = await login(email, password);
       localStorage.setItem('token', res.token);
-
-      setUser(res.user);
+      setUser(res.user || email);
     } catch (e) {
-      alert('Login failed');
+      console.error(e);
+
+      if (e.message && e.message.includes('Too many')) {
+        setLoginDisabled(true);
+        setCooldown(60);
+        alert('Too many attempts. Try again in 60 seconds.');
+      } else {
+        alert('Invalid credentials');
+      }
     }
+  }
+
+  // 🔥 STREAM FUNCTION (FIXED)
+  function streamResponse(fullText) {
+    let index = 0;
+
+    const interval = setInterval(() => {
+      index++;
+
+      setMessages((prev) => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+
+        if (last && last.role === 'assistant') {
+          last.content = fullText.slice(0, index);
+        }
+
+        return updated;
+      });
+
+      if (index >= fullText.length) {
+        clearInterval(interval);
+      }
+    }, 12); // speed control
   }
 
   // ---------------- GENERATE ----------------
@@ -57,17 +110,16 @@ export default function App() {
         content = JSON.stringify(r.testcases, null, 2);
       } else {
         const raw = typeof r === 'string' ? r : JSON.stringify(r, null, 2);
-
-        // 🔥 FINAL FIXES: newline + quotes
         content = raw.replace(/\\n/g, '\n').replace(/\\"/g, '"');
       }
 
-      const aiMsg = {
-        role: 'assistant',
-        content,
-      };
+      // 🔥 Insert empty assistant message first
+      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
-      setMessages((prev) => [...prev, aiMsg]);
+      // 🔥 Start streaming safely
+      setTimeout(() => {
+        streamResponse(content);
+      }, 50);
     } catch (e) {
       console.error(e);
       alert(e.message || 'Error generating output.');
@@ -81,66 +133,129 @@ export default function App() {
     navigator.clipboard.writeText(text);
   }
 
+  function formatContent(text) {
+    return text.split('\n').map((line, i) => {
+      if (line.trim() === '') return <br key={i} />;
+      return <div key={i}>{line}</div>;
+    });
+  }
+
   // ---------------- LOGIN SCREEN ----------------
   if (!user) {
     return (
       <div className="login-container">
         <h1>AI Test Case Agent</h1>
 
-        <input placeholder="Enter username" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <input type="email" placeholder="Enter email" value={email} onChange={(e) => setEmail(e.target.value)} />
 
-        <button onClick={handleLogin}>Login</button>
+        <input
+          type="password"
+          placeholder="Enter password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <button onClick={handleLogin} disabled={loginDisabled}>
+          {loginDisabled ? `Try again in ${cooldown}s` : 'Login'}
+        </button>
       </div>
     );
   }
 
-  // ---------------- MAIN APP ----------------
+  // ---------------- CHAT ----------------
   return (
     <div className="chat-app">
       <header className="header">
-        <h1>AI Test Case Agent</h1>
-        <span>👤 {user}</span>
+        <h1>QA Assistant</h1>
+
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          <span>👤 {user}</span>
+
+          <button
+            onClick={() => {
+              localStorage.removeItem('token');
+              setUser(null);
+            }}
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
-      <div className="messages">
-        {messages.map((msg, i) => (
-          <div key={i} className={`message ${msg.role}`}>
-            <div className="bubble">
-              {/* 🔥 FINAL DISPLAY FIX */}
-              <pre style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</pre>
+      <div className="main-layout">
+        <div className="chat-section">
+          {messages.length === 0 && (
+            <div style={{ textAlign: 'center', marginTop: '120px', color: '#6b7280' }}>
+              <h2>How can I help you today?</h2>
+            </div>
+          )}
 
-              {msg.role === 'assistant' && (
-                <button className="copy-btn" onClick={() => copy(msg.content)}>
-                  Copy
-                </button>
-              )}
+          <div className="messages">
+            {messages.map((msg, i) => (
+              <div key={i} className={`message ${msg.role}`}>
+                <div className="bubble">
+                  <div>{formatContent(msg.content)}</div>
+
+                  {msg.role === 'assistant' && msg.content && (
+                    <button className="copy-btn" onClick={() => copy(msg.content)}>
+                      Copy
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="message assistant">
+                <div className="bubble">
+                  <span style={{ opacity: 0.6 }}>Thinking...</span>
+                </div>
+              </div>
+            )}
+
+            <div ref={bottomRef} />
+          </div>
+
+          <div className="input-area">
+            <textarea value={req} onChange={(e) => setReq(e.target.value)} placeholder="Message QA Assistant..." />
+
+            <div className="controls">
+              <select value={format} onChange={(e) => setFormat(e.target.value)}>
+                <option value="json">JSON</option>
+                <option value="gherkin">Gherkin</option>
+                <option value="text">Text</option>
+                <option value="excel">Excel</option>
+              </select>
+
+              <button onClick={onGenerate}>Send</button>
             </div>
           </div>
-        ))}
+        </div>
 
-        {loading && (
-          <div className="message assistant">
-            <div className="bubble">Generating test cases... please wait ⏳</div>
-          </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      <div className="input-area">
-        <textarea value={req} onChange={(e) => setReq(e.target.value)} placeholder="Paste business requirement..." />
-
-        <div className="controls">
-          <select value={format} onChange={(e) => setFormat(e.target.value)}>
-            <option value="json">JSON</option>
-            <option value="gherkin">Gherkin</option>
-            <option value="text">Text</option>
-            <option value="excel">Excel</option>
-          </select>
-
-          <button onClick={onGenerate}>Generate</button>
+        <div className="history-panel">
+          <h3>📁 History (Coming Soon)</h3>
         </div>
       </div>
+
+      <a
+        href="https://www.linkedin.com/in/jhapradip"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          background: '#ffffff',
+          color: '#0f172a',
+          padding: '6px 12px',
+          borderRadius: '999px',
+          border: '2px solid #3b82f6',
+          fontWeight: '700',
+          zIndex: 9999,
+        }}
+      >
+        ⚡ PJ
+      </a>
     </div>
   );
 }

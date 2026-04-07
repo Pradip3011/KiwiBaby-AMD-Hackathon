@@ -1,27 +1,40 @@
-import uuid
+import os
 from datetime import datetime, timedelta
+from jose import jwt, JWTError
 
-fake_sessions = {}
+# 🔐 CONFIG (MOVE TO .env IN FUTURE)
+SECRET_KEY = os.getenv("SECRET_KEY", "SUPER_SECRET_KEY_CHANGE_THIS")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-SESSION_TIMEOUT = timedelta(hours=2)
 
+# -------------------------
+# CREATE TOKEN
+# -------------------------
+def create_session(email: str):
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
-def create_session(username: str):
-    token = str(uuid.uuid4())
-    fake_sessions[token] = {
-        "username": username,
-        "created_at": datetime.utcnow()
+    payload = {
+        "sub": email,
+        "exp": expire
     }
+
+    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
 
+# -------------------------
+# VERIFY TOKEN
+# -------------------------
 def get_user(token: str):
-    session = fake_sessions.get(token)
-    if not session:
-        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
-    if datetime.utcnow() - session["created_at"] > SESSION_TIMEOUT:
-        del fake_sessions[token]
-        return None
+        email: str = payload.get("sub")
+        if email is None:
+            return None
 
-    return session["username"]
+        return email
+
+    except JWTError:
+        return None
