@@ -281,7 +281,7 @@ def _gen_gemini(prompt: str):
     # Explicitly set a longer timeout (120 seconds) for complex generations
     resp = model.generate_content(
         prompt,
-        request_options={"timeout": 120}
+        request_options={"timeout": 600.0}
     )
 
     return getattr(resp, "text", str(resp))
