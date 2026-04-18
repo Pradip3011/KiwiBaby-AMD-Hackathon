@@ -86,21 +86,6 @@ Generate a COMPLETE QA deliverable in Gherkin format for the following requireme
 Requirement:
 {requirement}
 
-MANDATORY OUTPUT STRUCTURE:
-
-1. Test Summary
-
-2. Feature: <Feature Name>
-
-3. BDD Scenarios in strict numbered Gherkin format
-
-4. Supporting sections after scenarios:
-   - Simplified Requirement Traceability Matrix
-   - Optimized Gherkin Design
-   - Risk-Based Testing View
-   - Test Data Strategy
-   - Exit Criteria
-
 STRICT GHERKIN RULES:
 
 Use only the following scenario formats.
@@ -110,13 +95,11 @@ STANDARD SCENARIO FORMAT:
 @<tag1> @<tag2> @<tag3>
 Scenario_01: <Scenario Title>
 Given <initial context>
-
-
+And <additional precondition if needed>
 When <first user action>
 And <additional user action if needed>
-
 Then <expected result>
-Then <additional expected result if needed>
+And <additional expected result if needed>
 
 SCENARIO OUTLINE FORMAT:
 
@@ -124,12 +107,10 @@ SCENARIO OUTLINE FORMAT:
 Scenario_Outline_01: <Scenario Title>
 Given <initial context>
 And <additional precondition if needed>
-
 When <first user action using "<placeholder>">
 And <additional user action if needed>
-
 Then <expected result>
-Then <additional expected result if needed>
+And <additional expected result if needed>
 
 Examples:
 | column_1 | column_2 | column_3 |
@@ -145,8 +126,8 @@ IMPORTANT RULES:
 7. Use And after Given only for additional preconditions.
 8. Use When for the first action.
 9. Use And after When only for additional actions.
-10. Use Then for every expected result.
-11. Never use And after Then.
+10. Use Then for the first expected result.
+11. Use And after Then for any additional expected results (never stack multiple Then keywords sequentially).
 12. Do not use numbered steps inside scenarios.
 13. Keep steps atomic, clear, and execution-ready.
 14. Ensure coverage includes positive, negative, and edge scenarios.
@@ -226,7 +207,7 @@ When I enter a valid email address
 And I enter a valid password
 And I click the Login button
 Then I should be redirected to the dashboard
-Then I should see a welcome message
+And I should see a welcome message
 
 @P0 @Regression
 Scenario_Outline_01: Login attempt with invalid credentials
@@ -235,15 +216,14 @@ When I enter "<email>"
 And I enter "<password>"
 And I click the Login button
 Then I should see an error message "<error_message>"
-Then I should remain on the login page
+And I should remain on the login page
 
 Examples:
 | email                | password       | error_message                    |
 | wrong@example.com    | ValidPass123!  | Invalid email or password.       |
 | valid@example.com    | WrongPass123!  | Invalid email or password.       |
-|                     | ValidPass123!  | Email cannot be empty.           |
-| valid@example.com    |               | Password cannot be empty.        |
-
+|                      | ValidPass123!  | Email cannot be empty.           |
+| valid@example.com    |                | Password cannot be empty.        |
 
 Requirement:
 {requirement}
@@ -278,7 +258,7 @@ def _gen_openai(prompt: str):
     if OpenAI is None:
         raise RuntimeError("OpenAI SDK not installed")
 
-    client = OpenAI(api_key=settings.LLM_API_KEY)
+    client = OpenAI(api_key=settings.GEMINI_API_KEY)
 
     resp = client.chat.completions.create(
         model=DEFAULT_OPENAI_MODEL,
@@ -294,11 +274,15 @@ def _gen_gemini(prompt: str):
     if genai is None:
         raise RuntimeError("Gemini SDK not installed")
 
-    genai.configure(api_key=settings.LLM_API_KEY)
+    genai.configure(api_key=settings.GEMINI_API_KEY)
 
     model = genai.GenerativeModel(DEFAULT_GEMINI_MODEL)
 
-    resp = model.generate_content(prompt)
+    # Explicitly set a longer timeout (120 seconds) for complex generations
+    resp = model.generate_content(
+        prompt,
+        request_options={"timeout": 120}
+    )
 
     return getattr(resp, "text", str(resp))
 
@@ -483,6 +467,7 @@ VALIDATION RULES:
 - NEVER use placeholder names like "Generated scenario" or "Inferred scenario"
 - If scenario is missing title → fix title based on content
 - Scenario titles must always describe the scenario clearly; no generic names allowed
+- MANDATORY GHERKIN SYNTAX: Never stack multiple 'Then' keywords sequentially. Use 'And' for subsequent expected results. # <--- ADD THIS LINE
 
 SEMANTIC CONSISTENCY (MANDATORY):
 - Ensure Scenario priorities follow QA standards:

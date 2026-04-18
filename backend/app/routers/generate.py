@@ -82,7 +82,7 @@ QA Intelligence Instructions:
 
 
 # -------------------------
-# 🔥 AGENT PIPELINE
+# 🔥 AGENT PIPELINE (BRIDGED ARCHITECTURE)
 # -------------------------
 def run_generation_pipeline(requirement: str, output_format: str):
 
@@ -97,7 +97,7 @@ def run_generation_pipeline(requirement: str, output_format: str):
     if learned_gaps:
         print("\n🧠 Applying learned gaps from memory...\n")
 
-    # PASS 1
+    # PASS 1: CORE REASONING (Always structural first)
     structured_testcases = generate_testcases(
         enriched_requirement,
         missing_scenarios=learned_gaps
@@ -106,7 +106,7 @@ def run_generation_pipeline(requirement: str, output_format: str):
     coverage = simple_coverage(structured_testcases, requirement)
     missing = coverage.get("missing_scenarios", [])
 
-    # PASS 2: IMPROVEMENT
+    # PASS 2: IMPROVEMENT LOOP
     if missing:
         print("\n🔁 Improving testcases using current missing scenarios...\n")
 
@@ -121,7 +121,7 @@ def run_generation_pipeline(requirement: str, output_format: str):
             structured_testcases = improved_testcases
             coverage = improved_coverage
 
-    # OUTPUT
+    # OUTPUT ROUTING
     if output_format == "json":
         return {
             "type": "json",
@@ -129,8 +129,17 @@ def run_generation_pipeline(requirement: str, output_format: str):
             "coverage": coverage
         }
     else:
+        # 🔥 THE FIX: Inject the PERFECTED JSON into the Gherkin formatter context
+        strict_context_prompt = f"""
+        {enriched_requirement}
+        
+        MANDATORY INSTRUCTION: 
+        Base your formatted output EXACTLY on these pre-approved, fully evaluated scenarios to guarantee 100% QA coverage:
+        {json.dumps(structured_testcases)}
+        """
+
         formatted_output = generate_formatted_output(
-            enriched_requirement,
+            strict_context_prompt,
             output_format
         )
 
@@ -163,7 +172,7 @@ def generate(
             req.output_format
         )
 
-        coverage = result.get("coverage")
+        coverage = result.get("coverage", {})
 
         if coverage:
             print("\n===== QA METRICS =====")
@@ -172,7 +181,7 @@ def generate(
             print(f"RULE SCORE: {coverage.get('rule_score')}/100")
             print("======================\n")
 
-        # JSON
+        # HANDLE JSON
         if result["type"] == "json":
             testcases = result["data"]
 
@@ -187,7 +196,7 @@ def generate(
                 requirement=requirement,
                 output=json.dumps(testcases),
                 format="json",
-                coverage_percent=coverage.get("coverage_percent") if coverage else None
+                coverage_percent=coverage.get("coverage_percent")
             )
 
             db.add(run)
@@ -203,7 +212,7 @@ def generate(
                 "missing_scenarios": coverage.get("missing_scenarios")
             }
 
-        # NON JSON
+        # HANDLE NON-JSON (Gherkin/Excel)
         else:
             formatted_output = result["data"]
 
@@ -218,13 +227,22 @@ def generate(
                 requirement=requirement,
                 output=formatted_output,
                 format=req.output_format,
-                coverage_percent=coverage.get("coverage_percent") if coverage else None
+                coverage_percent=coverage.get("coverage_percent")
             )
 
             db.add(run)
             db.commit()
 
-            return formatted_output
+            # 🔥 THE FIX: Return the metrics alongside the formatted string!
+            return {
+                "formatted_output": formatted_output,
+                "coverage_percent": coverage.get("coverage_percent"),
+                "qa_score": coverage.get("qa_score"),
+                "rule_score": coverage.get("rule_score"),
+                "qa_details": coverage.get("qa_details"),
+                "rule_details": coverage.get("rule_details"),
+                "missing_scenarios": coverage.get("missing_scenarios")
+            }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

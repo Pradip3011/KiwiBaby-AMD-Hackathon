@@ -10,7 +10,8 @@ def fallback_testcases(requirement: str):
             "id": "TC_001",
             "title": f"Basic test for: {requirement[:30]}",
             "steps": ["Execute the main flow"],
-            "expected": "System behaves as expected"
+            "expected": "System behaves as expected",
+            "type": "Positive" # <--- Add this
         }
     ]
 
@@ -28,6 +29,9 @@ def validate_testcases(testcases):
             and tc.get("steps")
             and tc.get("expected")
         ):
+            # Ensure the type field exists for the evaluator
+            if "type" not in tc:
+                tc["type"] = "General"
             valid.append(tc)
 
     return valid

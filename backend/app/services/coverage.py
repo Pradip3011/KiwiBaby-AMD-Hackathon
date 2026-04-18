@@ -106,13 +106,23 @@ Return:
 
     rules = [r.strip("- ").strip() for r in response.split("\n") if r.strip()]
 
-    # Remove weak/generic rules
+    # Remove weak/generic rules and AI conversational filler
     cleaned = []
     for r in rules:
         if len(r.split()) < 4:
             continue
         if any(bad in r.lower() for bad in ["ensure", "should work", "properly"]):
             continue
+        # 🔥 THE NEW FIX: Block conversational AI filler strings
+        if any(filler in r.lower() for filler in [
+            "here are", 
+            "specific, testable", 
+            "validation rules", 
+            "based on the", 
+            "the following are"
+        ]):
+            continue
+            
         cleaned.append(r)
 
     return list(set(cleaned))
@@ -151,12 +161,12 @@ def calculate_qa_score(testcases):
     details = {}
 
     checks = {
-        "positive": ["success", "valid"],
-        "negative": ["invalid", "error", "fail"],
-        "edge": ["empty", "limit", "boundary"],
-        "validation": ["required", "format", "validation"],
-        "system": ["timeout", "concurrent", "rate", "session"],
-        "api": ["api", "status code"]
+        "positive": ["success", "valid", "positive", "happy path"],
+        "negative": ["invalid", "error", "fail", "negative"],
+        "edge": ["empty", "limit", "boundary", "edge", "edgecase"],
+        "validation": ["required", "format", "validation", "businesslogic"],
+        "system": ["timeout", "concurrent", "rate", "session", "system"],
+        "api": ["api", "status code", "endpoint"]
     }
 
     weights = {
