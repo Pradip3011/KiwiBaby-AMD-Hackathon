@@ -4,7 +4,7 @@ from .database import Base
 
 
 # -------------------------
-# USER TABLE (🔥 UPDATED)
+# USER TABLE (STRICT NO-TOUCH)
 # -------------------------
 class User(Base):
     __tablename__ = "users"
@@ -25,7 +25,7 @@ class User(Base):
 
 
 # -------------------------
-# TEST RUN TABLE (CORE)
+# TEST RUN TABLE (CORE - GLOBAL TELEMETRY UPDATED)
 # -------------------------
 class TestRun(Base):
     __tablename__ = "test_runs"
@@ -46,6 +46,12 @@ class TestRun(Base):
 
     # Coverage tracking
     coverage_percent = Column(Float, nullable=True)
+
+    # 🌍 GLOBAL TELEMETRY FIELDS (NEW)
+    # --------------------------------
+    trigger_ip = Column(String, nullable=True)
+    trigger_city = Column(String, nullable=True)
+    trigger_country = Column(String, nullable=True)
 
     # Timestamp
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

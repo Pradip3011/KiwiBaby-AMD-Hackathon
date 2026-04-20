@@ -1,0 +1,7 @@
+version: "2"
+authtoken: 3CX5kGIkQ844SKTHa0nF3F70vrZ_6FxYnfaL63oHP9Bk6ppbm
+update_channel: stable
+tunnels:
+  auckland-agent:
+    proto: http
+    addr: 8000
