@@ -11,8 +11,8 @@ API_ENDPOINT = f"{NGROK_URL}{HEALTH_PATH}"
 CHECK_INTERVAL = 10  # Reduced to 10s for faster command response when Boss is home
 
 # 💎 ARCHITECT'S CREDENTIALS
-TELEGRAM_TOKEN = "8629765611:AAEt_3Hz8TLRxEIiuJ10VILagSv0ZC0lDDA"
-TELEGRAM_CHAT_ID = "6374596694"
+TELEGRAM_TOKEN = "8838976396:AAFjWuV4RKimkt6kOSEaOlnnViSUgxtiNV0"
+TELEGRAM_CHAT_ID = "8829420534"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [%(levelname)s] - %(message)s')
 
@@ -34,17 +34,19 @@ def send_sentinel_alert(message):
         return False
 
 def de_cloak_system():
-    """Triggered by Boss: Re-launches hidden windows into visible mode."""
     logging.warning("👑 Boss Handshake Verified. De-cloaking Auckland Bridge...")
-    send_sentinel_alert("✨ <b>IDENTITY VERIFIED</b>\nRestoring workspace visibility for the Boss.")
+    send_sentinel_alert("✨ <b>IDENTITY VERIFIED</b>\nRestoring workspace visibility.")
     
-    # Kill hidden ghosts
+    # 1. Targeted Kill: Kill only the process holding Port 8001 (The Backend)
+    # This prevents the monitor.py from killing itself
+    subprocess.run('for /f "tokens=5" %a in (\'netstat -aon ^| findstr :8001\') do taskkill /f /pid %a', shell=True, capture_output=True)
+    
+    # 2. Kill Ngrok
     subprocess.run("taskkill /f /im ngrok.exe", shell=True, capture_output=True)
-    subprocess.run("taskkill /f /im python.exe", shell=True, capture_output=True)
     
     time.sleep(2)
     
-    # Launch Visible
+    # 3. Re-launch Visible
     backend_cmd = 'start cmd /k "cd backend && .\\.venv\\Scripts\\activate && uvicorn app.main:app --host 127.0.0.1 --port 8001"'
     subprocess.Popen(backend_cmd, shell=True)
     
@@ -52,6 +54,8 @@ def de_cloak_system():
     
     ngrok_cmd = 'start cmd /k "ngrok http 8001"'
     subprocess.Popen(ngrok_cmd, shell=True)
+    
+    logging.info("✅ Workspace Restored. Monitor continuing in background...")
 
 def check_for_boss_command():
     """Listen for /boss_is_here from Telegram."""

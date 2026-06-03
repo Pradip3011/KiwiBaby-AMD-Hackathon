@@ -1,25 +1,43 @@
 from typing import Optional
 import logging
+import time
 
 from .config import settings
 from .utils import try_parse_json
 from .memory import retrieve_similar  # 🔥 MEMORY IMPORT
 
+# Third-party stability libraries
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 logger = logging.getLogger("ai-testcase-agent.llm")
 
-# Optional provider imports
+# -------------------------
+# COMPATIBLE PROVIDER IMPORTS & INITIALIZATION
+# -------------------------
 try:
-    import google.generativeai as genai
+    from google import genai  # Modern unified Google GenAI SDK framework
+    from google.genai.errors import ServerError
 except Exception:
     genai = None
+    ServerError = Exception
 
 try:
     from openai import OpenAI
 except Exception:
     OpenAI = None
 
-DEFAULT_GEMINI_MODEL = settings.LLM_MODEL or "gemini-1.5-flash"
+DEFAULT_GEMINI_MODEL = settings.LLM_MODEL or "gemini-2.5-flash"
 DEFAULT_OPENAI_MODEL = settings.LLM_MODEL or "gpt-4o-mini"
+
+# Initialize global client singletons safely to reuse connection pools
+openai_client = None
+gemini_client = None
+
+if OpenAI and getattr(settings, "OPENAI_API_KEY", None):
+    openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+if genai and getattr(settings, "GEMINI_API_KEY", None):
+    gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
 # -------------------------
@@ -44,7 +62,7 @@ Always begin with a short Test Summary (2–4 sentences).
 
 
 # -------------------------
-# PROMPT BUILDER (UNCHANGED)
+# PROMPT BUILDER
 # -------------------------
 def _format_prompt_for(fmt: str, requirement: str) -> str:
     fmt = fmt.lower()
@@ -252,43 +270,46 @@ Requirement:
 
 
 # -------------------------
-# PROVIDERS
+# RESILIENT ENGINE PROVIDERS
 # -------------------------
 def _gen_openai(prompt: str):
-    if OpenAI is None:
-        raise RuntimeError("OpenAI SDK not installed")
+    if openai_client is None:
+        raise RuntimeError("OpenAI SDK or API Key not initialized properly")
 
-    client = OpenAI(api_key=settings.GEMINI_API_KEY)
-
-    resp = client.chat.completions.create(
+    resp = openai_client.chat.completions.create(
         model=DEFAULT_OPENAI_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         max_tokens=1500,
     )
-
     return resp.choices[0].message.content
 
 
-def _gen_gemini(prompt: str):
-    if genai is None:
-        raise RuntimeError("Gemini SDK not installed")
-
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-
-    model = genai.GenerativeModel(DEFAULT_GEMINI_MODEL)
-
-    # Explicitly set a longer timeout (120 seconds) for complex generations
-    resp = model.generate_content(
-        prompt,
-        request_options={"timeout": 600.0}
+# Native resilience decorator intercepting 503 cloud spikes automatically
+@retry(
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(ServerError),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Upstream Gemini API high demand status (503). Retrying execution attempt {retry_state.attempt_number}..."
     )
+)
+def _gen_gemini(prompt: str):
+    if gemini_client is None:
+        raise RuntimeError("Gemini SDK or API Key not initialized properly")
 
+    resp = gemini_client.models.generate_content(
+        model=DEFAULT_GEMINI_MODEL,
+        contents=prompt,
+        config={
+            "temperature": 0.2
+        }
+    )
     return getattr(resp, "text", str(resp))
 
 
 # -------------------------
-# SAFE GENERATION (NEW)
+# SAFE GENERATION LAYER
 # -------------------------
 def _safe_generate(prompt: str, retries: int = 2):
     for attempt in range(retries):
@@ -300,14 +321,14 @@ def _safe_generate(prompt: str, retries: int = 2):
 
             return _gen_openai(prompt)
 
-        except Exception:
-            logger.exception(f"LLM attempt {attempt+1} failed")
+        except Exception as e:
+            logger.exception(f"LLM attempt {attempt+1} execution sequence failed: {str(e)}")
 
     return ""
 
 
 # -------------------------
-# CORE GENERATION
+# CORE GENERATION GATEWAY
 # -------------------------
 def _generate(requirement: str, fmt: str):
     prompt = _format_prompt_for(fmt, requirement)
@@ -315,7 +336,7 @@ def _generate(requirement: str, fmt: str):
 
 
 # -------------------------
-# CONTROL LAYER (FINAL)
+# OUTPUT RUNTIME CONTROL LAYER
 # -------------------------
 def _control_gherkin_output(output: str) -> str:
     lines = output.split("\n")
@@ -327,36 +348,38 @@ def _control_gherkin_output(output: str) -> str:
     in_examples = False
 
     for line in lines:
-
-        # Limit normal scenarios
-        if line.strip().startswith("Scenario_") and not line.strip().startswith("Scenario_Outline_"):
+        # Limit standard scenarios cleanly
+        if line.strip().startswith("Scenario_") and not line.strip().startswith("Scenario_Outline_") and not line.strip().startswith("Scenario Outline_"):
             if scenario_count >= 10:
                 continue
             scenario_count += 1
 
-        # Limit outlines
-        if "Scenario_Outline_" in line:
+        # Synchronized scanning to prevent Outline token omission
+        if "Scenario_Outline_" in line or "Scenario Outline_" in line:
             if outline_count >= 2:
                 continue
             outline_count += 1
 
-        # Handle Examples
+        # Handle Examples Tables bounds
         if line.strip().startswith("Examples"):
             in_examples = True
             example_rows = 0
             controlled.append(line)
             continue
 
-        # ❌ Remove meta-commentary
+        # Wipe metadata and diagnostic chatter from output strings safely
         if any(bad in line.lower() for bad in [
             "proposed improvement",
             "revised",
             "here are",
             "suggestion",
             "review",
-            "improvement",
-            "###"
+            "improvement"
         ]):
+            continue
+
+        # 🔥 FIXED RULE: Protect required supporting section headers from being stripped out
+        if "###" in line and not any(header in line for header in ["1.", "2.", "3.", "4.", "5."]):
             continue
 
         if in_examples:
@@ -367,7 +390,6 @@ def _control_gherkin_output(output: str) -> str:
             else:
                 in_examples = False
 
-        # Remove broken huge lines
         if len(line) > 300:
             continue
 
@@ -375,40 +397,50 @@ def _control_gherkin_output(output: str) -> str:
 
     return "\n".join(controlled)
 
+
 # -------------------------
-# STRUCTURE VALIDATION (NEW)
+# STRUCTURE VALIDATION FILTER
 # -------------------------
 def _validate_gherkin_structure(output: str) -> str:
     lines = output.split("\n")
 
     fixed = []
     scenario_counter = 1
+    outline_counter = 1
 
     for i, line in enumerate(lines):
         stripped = line.strip()
 
-        # Detect missing scenario BEFORE Given
+        # Catch structural orphan context keywords before Scenario declarations
         if stripped.startswith("Given"):
             prev_line = fixed[-1].strip() if fixed else ""
 
-            if not prev_line.startswith("Scenario_") and not prev_line.startswith("Scenario_Outline_"):
-                # Only add if next few lines look like real scenario
-                fixed.append(f"Scenario_{scenario_counter:02d}: Inferred scenario")
+            if not prev_line.startswith("Scenario_") and not prev_line.startswith("Scenario_Outline_") and not prev_line.startswith("Scenario Outline_"):
+                fixed.append(f"Scenario_{scenario_counter:02d}: Inferred execution step context")
                 scenario_counter += 1
 
-        # Normalize numbering
-        if stripped.startswith("Scenario_"):
-            parts = stripped.split(":")[0].split("_")
-            if len(parts) > 1:
-                fixed.append(f"Scenario_{scenario_counter:02d}: {line.split(':',1)[1].strip()}")
-                scenario_counter += 1
-                continue
+        # Isolated Scenario Outline intercept strategy so lines don't get crushed into regular Scenarios
+        if stripped.startswith("Scenario_Outline_") or stripped.startswith("Scenario Outline_"):
+            try:
+                title_part = line.split(':', 1)[1].strip()
+            except IndexError:
+                title_part = "Optimized Data Matrix Scenario Outline"
+            fixed.append(f"Scenario_Outline_{outline_counter:02d}: {title_part}")
+            outline_counter += 1
+            continue
 
-        # Remove "Generated scenario" junk
+        elif stripped.startswith("Scenario_"):
+            try:
+                title_part = line.split(':', 1)[1].strip()
+            except IndexError:
+                title_part = "Automated Verification Requirement Sequence"
+            fixed.append(f"Scenario_{scenario_counter:02d}: {title_part}")
+            scenario_counter += 1
+            continue
+
         if "generated scenario" in stripped.lower():
             continue
 
-        # Remove duplicate separators
         if stripped == "---":
             if fixed and fixed[-1].strip() == "---":
                 continue
@@ -419,7 +451,7 @@ def _validate_gherkin_structure(output: str) -> str:
 
 
 # -------------------------
-# REVIEW LAYER (FINAL FIXED)
+# CONTEXT REVIEW LAYER
 # -------------------------
 def _review_output(requirement: str, output: str, fmt: str):
     review_prompt = f"""
@@ -467,16 +499,16 @@ VALIDATION RULES:
 - NEVER use placeholder names like "Generated scenario" or "Inferred scenario"
 - If scenario is missing title → fix title based on content
 - Scenario titles must always describe the scenario clearly; no generic names allowed
-- MANDATORY GHERKIN SYNTAX: Never stack multiple 'Then' keywords sequentially. Use 'And' for subsequent expected results. # <--- ADD THIS LINE
+- MANDATORY GHERKIN SYNTAX: Never stack multiple 'Then' keywords sequentially. Use 'And' for subsequent expected results.
 
 SEMANTIC CONSISTENCY (MANDATORY):
 - Ensure Scenario priorities follow QA standards:
-    - P0 = core business flow only
-    - P1 = validation, edge, system scenarios
+     - P0 = core business flow only
+     - P1 = validation, edge, system scenarios
 - Ensure all Scenario IDs referenced in:
-    - Traceability Matrix
-    - Risk-Based Testing
-    - match actual scenarios exactly
+     - Traceability Matrix
+     - Risk-Based Testing
+     - match actual scenarios exactly
 - Ensure Scenario numbering reflects actual order and meaning
 - Ensure Scenario Outline naming is consistent wherever Examples are used
 - Avoid over-promoting scenarios to P0 unless they are core functionality
@@ -484,9 +516,9 @@ SEMANTIC CONSISTENCY (MANDATORY):
 SCENARIO ID & NAMING CONSISTENCY (STRICT):
 - If a scenario contains "Examples", it MUST be named "Scenario_Outline_XX"
 - Scenario Outline numbering must be consistent across:
-    - Scenario definition
-    - Traceability Matrix
-    - Risk-Based Testing section
+     - Scenario definition
+     - Traceability Matrix
+     - Risk-Based Testing section
 - All Scenario IDs referenced must exist and match exactly
 - Do NOT reference non-existent scenarios
 - Do NOT reuse incorrect numbering
@@ -541,38 +573,31 @@ If output is already correct:
 """
 
     reviewed = _safe_generate(review_prompt)
-
-    # fallback safety
     final_output = reviewed if reviewed and len(reviewed.strip()) > 50 else output
 
-    # 🔥 Apply control ONLY for GHERKIN
     if fmt == "gherkin":
         final_output = _control_gherkin_output(final_output)
         final_output = _validate_gherkin_structure(final_output)
 
     return final_output
+
+
 # -------------------------
-# STRUCTURED OUTPUT (WITH MEMORY IMPROVED)
+# STRUCTURED VECTOR MEMORY LAYER
 # -------------------------
 def generate_structured_testcases(requirement: str):
-
     past = retrieve_similar(requirement)
 
     context = ""
     if past:
         context = "\n".join(past)
 
-    enhanced_requirement = f"""
-Current Requirement:
-{requirement}
-
-Reference Past Cases:
-{context}
-
-Instructions:
-- Use past cases to improve edge coverage
-- Do not copy blindly
-"""
+    # Shielded literal f-string compilation block
+    enhanced_requirement = (
+        f"Current Requirement:\n{requirement}\n\n"
+        f"Reference Past Cases:\n{context}\n\n"
+        f"Instructions:\n- Use past cases to improve edge coverage\n- Do not copy blindly"
+    )
 
     raw = _generate(enhanced_requirement, "json")
 
@@ -599,12 +624,12 @@ Instructions:
         return normalized
 
     except Exception:
-        logger.warning("JSON parsing failed")
+        logger.warning("JSON parsing failed structure matching checks.")
         return fallback_testcases(requirement)
 
 
 # -------------------------
-# FORMATTED OUTPUT (UPGRADED)
+# RUNTIME FORMAT ENTRYPOINT
 # -------------------------
 def generate_formatted_output(requirement: str, fmt: str):
     raw = _generate(requirement, fmt)
@@ -613,12 +638,11 @@ def generate_formatted_output(requirement: str, fmt: str):
         return "No output generated"
 
     improved = _review_output(requirement, raw, fmt)
-
     return improved or raw
 
 
 # -------------------------
-# FALLBACK
+# EXECUTION FALLBACK STRATEGY
 # -------------------------
 def fallback_testcases(requirement: str):
     return [

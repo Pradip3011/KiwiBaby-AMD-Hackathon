@@ -1,17 +1,17 @@
+import datetime
+import logging
+import time
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
 from sqlalchemy import desc
-import logging
-import time
-import datetime
+from sqlalchemy.orm import Session
 
-# Architectural Imports
-from .routers import auth, generate, history
-from .database import Base, engine
-from .config import settings
-from . import models 
+# 🎯 CRITICAL VERCEL FIX: Transitioned from relative to absolute package imports
+from app import models
+from app.database import Base, engine
+from app.config import settings
+from app.routers import auth, generate, history
 
 # -------- logging (Architectural Telemetry) --------
 logging.basicConfig(level=logging.INFO)
@@ -20,20 +20,46 @@ logger = logging.getLogger("ai-testcase-agent")
 # -------- app initialization (SINGLE INSTANCE) --------
 app = FastAPI(title="AI TestCase Agent")
 
+# -------- CORS Middleware (Cross-Origin Resource Sharing) --------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # -------- DB init (Persistence Layer) --------
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database Schema verified/created successfully.")
+except Exception as e:
+    logger.error(f"Database initialization alert: {e}")
+
 
 # -------- SYSTEM UTILITIES --------
+
+@app.get("/")
+async def root():
+    """Returns health status instantly on root URL hit."""
+    return {
+        "status": "online",
+        "message": "KiwiBaby AI Testing Agent Backend is Live!",
+        "node": "Auckland Bridge Node",
+    }
+
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """Silences browser favicon noise."""
     return Response(status_code=204)
 
+
 @app.get("/health")
 def health_check():
     """The Auckland Bridge Heartbeat."""
     return {"status": "Auckland Bridge is Active", "timestamp": time.time()}
+
 
 # -------- MOBILE COMMAND CENTER (Your Clarity Page) --------
 
@@ -41,29 +67,41 @@ def health_check():
 async def live_telemetry():
     """Architect's Real-Time Log View: Dynamic Global Tracking."""
     now = datetime.datetime.now().strftime("%H:%M:%S")
-    
+
     # 🌍 FETCH LATEST GLOBAL TELEMETRY FROM DB
     db = Session(bind=engine)
     try:
-        last_run = db.query(models.TestRun).order_by(desc(models.TestRun.created_at)).first()
-        
+        last_run = (
+            db.query(models.TestRun)
+            .order_by(desc(models.TestRun.created_at))
+            .first()
+        )
+
         # Default values if no runs exist
         location = "No active tasks"
         origin_ip = "N/A"
         task_title = "Standby"
-        
+
         if last_run:
             city = last_run.trigger_city or "Unknown"
             country = last_run.trigger_country or "Unknown"
             location = f"{city}, {country}"
             origin_ip = last_run.trigger_ip or "Local"
             # Extracting a snippet of the requirement as the title
-            task_title = (last_run.requirement[:35] + '...') if len(last_run.requirement) > 35 else last_run.requirement
-            
+            task_title = (
+                (last_run.requirement[:35] + "...")
+                if len(last_run.requirement) > 35
+                else last_run.requirement
+            )
+
+    except Exception as e:
+        logger.error(f"Telemetry DB pull failed: {e}")
+        location, origin_ip, task_title = "Telemetry Error", "N/A", "Offline"
     finally:
         db.close()
 
-    return f"""
+    # Standard multiline string prevents Tailwind brackets from breaking Python string parsing
+    html_template = """
     <html>
         <head>
             <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -85,47 +123,24 @@ async def live_telemetry():
 
                 <div class="bg-slate-950 p-4 rounded-lg border border-emerald-900/40 shadow-xl shadow-emerald-500/10">
                     <p class="text-emerald-600 mb-2 border-b border-emerald-900/30 pb-1 uppercase text-[9px] font-bold">🌍 Global Telemetry</p>
-                    <div class="flex justify-between py-1"><span>Origin:</span><span class="text-white font-bold">{location}</span></div>
-                    <div class="flex justify-between py-1"><span>Client IP:</span><span class="text-slate-400">{origin_ip}</span></div>
-                    <div class="flex justify-between py-1"><span>Last Update:</span><span class="text-slate-400 italic">{now}</span></div>
-                </div>
-
-                <div class="bg-slate-950 p-4 rounded-lg border border-slate-800">
-                    <p class="text-slate-500 mb-2 border-b border-slate-800 pb-1 uppercase text-[9px]">Real-Time Traffic</p>
-                    <div class="space-y-1">
-                        <p class="text-slate-400">[{now}] <span class="text-white">GET /telemetry</span> <span class="text-emerald-500">200 OK</span></p>
-                        <p class="text-slate-400">[{now}] <span class="text-white text-[9px]">Sync: DB Mirroring Active</span></p>
-                    </div>
+                    <div class="flex justify-between py-1"><span>Trigger Location:</span><span class="text-white">{location}</span></div>
+                    <div class="flex justify-between py-1"><span>Origin IP:</span><span class="text-slate-400">{origin_ip}</span></div>
+                    <div class="flex justify-between py-1"><span>System Clock:</span><span class="text-emerald-500">{system_clock}</span></div>
                 </div>
             </div>
-
-            <button onclick="window.location.reload()" class="fixed bottom-6 right-6 bg-emerald-600 hover:bg-emerald-500 text-black px-8 py-4 rounded-full shadow-2xl font-black text-xs border-2 border-black transition-transform active:scale-95">
-                REFRESH DATA
-            </button>
         </body>
     </html>
     """
+    
+    return html_template.format(
+        task_title=task_title,
+        location=location,
+        origin_ip=origin_ip,
+        system_clock=now
+    )
 
-# -------- CORS --------
-origins = ["*"] 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], # For testing, allow all. For production, put your Vercel URL here.
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# -------- ROUTERS --------
-app.include_router(auth.router, prefix="/auth")
-app.include_router(generate.router)
-app.include_router(history.router)
-
-@app.get("/")
-async def root():
-    return {"message": "Auckland Bridge is Active", "status": "online"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+# -------- ROUTER INCLUSIONS --------
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(generate.router, prefix="", tags=["Generation"])
+app.include_router(history.router, prefix="/history", tags=["History"])

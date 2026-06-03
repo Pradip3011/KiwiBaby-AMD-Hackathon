@@ -1,29 +1,63 @@
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
-from dotenv import load_dotenv
 
-# Load the variables from your .env file
+# Load environment variables
 load_dotenv()
 
-# Pull the Neon Postgres URL securely
+# Database URL from .env
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# 🔥 FIX: Added pool_pre_ping to handle Neon's serverless connection drops
-# Also added pool_recycle to refresh connections every hour
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL environment variable is not set. "
+        "Please check your .env file."
+    )
+
+# Create SQLAlchemy engine
 engine = create_engine(
-    DATABASE_URL, 
-    pool_pre_ping=True,
-    pool_recycle=3600
+    DATABASE_URL,
+    pool_pre_ping=True,      # Prevent stale connections
+    pool_recycle=3600,       # Refresh connections every hour
+    pool_size=5,
+    max_overflow=10,
+    echo=False               # Set True for SQL debugging
 )
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+# Session factory
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
 
+# Base class for models
 Base = declarative_base()
 
+
 def get_db():
+    """
+    FastAPI dependency for database sessions.
+
+    Usage:
+        @router.get("/")
+        def endpoint(db: Session = Depends(get_db)):
+            ...
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
+
+
+def init_db():
+    """
+    Creates all tables defined in models.
+    Call once during application startup if needed.
+    """
+    Base.metadata.create_all(bind=engine)
