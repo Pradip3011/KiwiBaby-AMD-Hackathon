@@ -34,7 +34,7 @@ try:
     Base.metadata.create_all(bind=engine)
     logger.info("Database Schema verified/created successfully.")
 except Exception as e:
-    logger.error(f"Database initialization alert: {e}")
+    logger.exception("Database initialization failed")
 
 
 # -------- SYSTEM UTILITIES --------
