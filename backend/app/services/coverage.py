@@ -27,6 +27,8 @@ def clean_scenarios(scenarios):
         sc = sc.strip()
         if not sc:
             continue
+        # Strip trailing/leading markdown bullet artifacts
+        sc = re.sub(r"^([\s\-\*\•]|\d+\.)+", "", sc).strip()
         if "here are" in sc.lower():
             continue
         if sc.startswith("**"):
@@ -52,7 +54,7 @@ def filter_missing_scenarios(missing):
 
 
 # -------------------------
-# Dynamic scenario extraction
+# Dynamic scenario extraction (HARDENED AGAINST CONVERSATIONAL FLUFF)
 # -------------------------
 def extract_dynamic_scenarios(requirement: str):
     prompt = f"""
@@ -70,8 +72,34 @@ Return:
     response = _safe_generate(prompt)
     if not response:
         return []
-    lines = [l.strip("- ").strip() for l in response.split("\n") if l.strip()]
-    return list(set(lines))
+        
+    lines = [l.strip() for l in response.split("\n") if l.strip()]
+    cleaned = []
+    
+    for l in lines:
+        # Strip list markers like numbers (1.), asterisks (*), or dashes (-)
+        l = re.sub(r"^([\s\-\*\•]|\d+\.)+", "", l).strip()
+        
+        # Block phrases shorter than an actual test intent
+        if len(l.split()) < 3:
+            continue
+            
+        # 🔥 THE CRITICAL FIX: Filter out conversational AI preambles and conclusions
+        if any(filler in l.lower() for filler in [
+            "here are", 
+            "practical qa", 
+            "test scenarios", 
+            "based on the", 
+            "the following",
+            "sure, here",
+            "realistic test",
+            "scenario analysis"
+        ]):
+            continue
+            
+        cleaned.append(l)
+        
+    return list(set(cleaned))
 
 
 # -------------------------
@@ -109,11 +137,11 @@ Return:
     # Remove weak/generic rules and AI conversational filler
     cleaned = []
     for r in rules:
+        r = re.sub(r"^([\s\-\*\•]|\d+\.)+", "", r).strip()
         if len(r.split()) < 4:
             continue
         if any(bad in r.lower() for bad in ["ensure", "should work", "properly"]):
             continue
-        # 🔥 THE NEW FIX: Block conversational AI filler strings
         if any(filler in r.lower() for filler in [
             "here are", 
             "specific, testable", 
@@ -218,7 +246,7 @@ def dynamic_rule_validation(testcases, requirement):
         if match:
             passed += 1
 
-    score = round((passed / len(rules)) * 100, 2)
+    score = round((passed / len(rules)) * 100, 2) if rules else 0
     return score, results
 
 
@@ -258,6 +286,9 @@ def make_decision(final_score, confidence):
 # -------------------------
 # FINAL ENGINE
 # -------------------------
+# -------------------------
+# FINAL ENGINE
+# -------------------------
 def simple_coverage(testcases, requirement):
 
     scenarios = clean_scenarios(extract_dynamic_scenarios(requirement))
@@ -273,7 +304,7 @@ def simple_coverage(testcases, requirement):
     covered_count = len(covered)
     missing_count = len(missing)
 
-    coverage_percent = round((covered_count / total) * 100, 2)
+    coverage_percent = round((covered_count / total) * 100, 2) if total > 0 else 0.0
 
     qa_score, qa_details = calculate_qa_score(testcases)
     rule_score, rule_details = dynamic_rule_validation(testcases, requirement)

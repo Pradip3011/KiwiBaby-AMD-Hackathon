@@ -11,7 +11,7 @@ def fallback_testcases(requirement: str):
             "title": f"Basic test for: {requirement[:30]}",
             "steps": ["Execute the main flow"],
             "expected": "System behaves as expected",
-            "type": "Positive" # <--- Add this
+            "type": "Positive"
         }
     ]
 
@@ -21,6 +21,8 @@ def fallback_testcases(requirement: str):
 # -------------------------
 def validate_testcases(testcases):
     valid = []
+    if not testcases:
+        return valid
 
     for tc in testcases:
         if (
@@ -47,36 +49,42 @@ def add_ids(testcases):
 
 
 # -------------------------
-# 🔥 CLEAN + MERGE SCENARIOS (CRITICAL FIX)
+# 🔥 CLEAN + MERGE SCENARIOS (BUSTER FIX FOR PARSER DUMPS)
 # -------------------------
 def prepare_missing_scenarios(missing_scenarios):
     """
     Cleans + deduplicates missing scenarios before injecting into LLM.
-    Prevents noisy prompts and repeated ideas.
+    Explicitly filters out corrupted parser dumps from failing evaluation cycles.
     """
-
     if not missing_scenarios:
         return []
 
     cleaned = []
 
     for sc in missing_scenarios:
+        if not isinstance(sc, str):
+            continue
+            
         sc = sc.strip()
 
         if not sc:
             continue
 
-        # remove noise
-        if "here are" in sc.lower():
+        # 🛑 FILTER: Catch raw conversational phrases
+        if any(phrase in sc.lower() for phrase in ["here are", "let's give them", "good luck configuring"]):
             continue
-        if sc.startswith("**"):
+            
+        # 🛑 FILTER: Catch corrupted parser dumps containing raw schema artifacts
+        if any(artifact in sc.lower() for artifact in ["json id tc_", "expected the system successfully", "bypasses speed of light"]):
             continue
-        if len(sc) < 10:
+            
+        # 🛑 FILTER: Catch generic formatting indicators
+        if sc.startswith("**") or len(sc) < 10:
             continue
 
         cleaned.append(sc)
 
-    # remove duplicates + limit size
+    # Remove duplicates + limit size to avoid prompt bloat
     return list(set(cleaned))[:5]
 
 
@@ -88,13 +96,11 @@ def enrich_requirement(requirement: str, missing_scenarios=None):
     Adds structured QA thinking BEFORE LLM call.
     Injects CLEANED missing scenarios for controlled self-improvement.
     """
-
     missing_block = ""
-
     cleaned_missing = prepare_missing_scenarios(missing_scenarios)
 
     if cleaned_missing:
-        missing_block = "\nMissing Scenarios to Improve Coverage:\n"
+        missing_block = "\nMissing Scenarios to Improve Coverage (Address these specifically):\n"
         for m in cleaned_missing:
             missing_block += f"- {m}\n"
 
@@ -123,11 +129,13 @@ Ensure:
 # -------------------------
 def generate_testcases(requirement: str, missing_scenarios=None):
     try:
-        # 🔥 Controlled enrichment (no noise injection)
+        # Controlled enrichment (no noise injection)
         enriched_requirement = enrich_requirement(requirement, missing_scenarios)
 
+        # Call underlying client
         testcases = generate_structured_testcases(enriched_requirement)
 
+        # Post-processing pipeline
         testcases = validate_testcases(testcases)
         testcases = add_ids(testcases)
 
