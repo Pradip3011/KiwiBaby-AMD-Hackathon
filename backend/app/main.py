@@ -1,26 +1,41 @@
+# 1. ATOMIC NETWORK LEVEL MONKEY-PATCH (Must execute first)
+import socket
+
+orig_getaddrinfo = socket.getaddrinfo
+
+def patched_getaddrinfo(host, port, family=0, *args, **kwargs):
+    if family == 0 or family == socket.AF_UNSPEC:
+        family = socket.AF_INET  # Force IPv4 connection paths for cloud routing
+    return orig_getaddrinfo(host, port, family, *args, **kwargs)
+
+socket.getaddrinfo = patched_getaddrinfo
+
+# 2. STANDARD LIBRARY IMPORTS
 import datetime
 import logging
 import time
+
+# 3. THIRD-PARTY FRAMEWORK IMPORTS
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-# 🎯 CRITICAL VERCEL FIX: Transitioned from relative to absolute package imports
+# 4. APPLICATION LAYER ARCHITECTURE
 from app import models
 from app.database import Base, engine
 from app.config import settings
 from app.routers import auth, generate, history
 
-# -------- logging (Architectural Telemetry) --------
+# 5. TELEMETRY & LOGGING SYSTEM
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-testcase-agent")
 
-# -------- app initialization (SINGLE INSTANCE) --------
+# 6. INSTANCE INITIALIZATION
 app = FastAPI(title="AI TestCase Agent")
 
-# -------- CORS Middleware (Cross-Origin Resource Sharing) --------
+# 7. CROSS-ORIGIN RESOURCE SHARING (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,7 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------- DB init (Persistence Layer) --------
+# 8. PERSISTENCE LAYER SYNCHRONIZATION
 try:
     Base.metadata.create_all(bind=engine)
     logger.info("Database Schema verified/created successfully.")
@@ -37,7 +52,7 @@ except Exception as e:
     logger.exception("Database initialization failed")
 
 
-# -------- SYSTEM UTILITIES --------
+# 9. INFRASTRUCTURE & UTILITY ENDPOINTS
 
 @app.get("/")
 async def root():
@@ -61,14 +76,14 @@ def health_check():
     return {"status": "Auckland Bridge is Active", "timestamp": time.time()}
 
 
-# -------- MOBILE COMMAND CENTER (Your Clarity Page) --------
+# 10. SYSTEM TELEMETRY MONITORING PLATFORM
 
 @app.get("/telemetry", response_class=HTMLResponse)
 async def live_telemetry():
     """Architect's Real-Time Log View: Dynamic Global Tracking."""
     now = datetime.datetime.now().strftime("%H:%M:%S")
 
-    # 🌍 FETCH LATEST GLOBAL TELEMETRY FROM DB
+    # Fetch latest operational telemetry safely
     db = Session(bind=engine)
     try:
         last_run = (
@@ -77,7 +92,6 @@ async def live_telemetry():
             .first()
         )
 
-        # Default values if no runs exist
         location = "No active tasks"
         origin_ip = "N/A"
         task_title = "Standby"
@@ -87,7 +101,6 @@ async def live_telemetry():
             country = last_run.trigger_country or "Unknown"
             location = f"{city}, {country}"
             origin_ip = last_run.trigger_ip or "Local"
-            # Extracting a snippet of the requirement as the title
             task_title = (
                 (last_run.requirement[:35] + "...")
                 if len(last_run.requirement) > 35
@@ -100,7 +113,6 @@ async def live_telemetry():
     finally:
         db.close()
 
-    # Standard multiline string prevents Tailwind brackets from breaking Python string parsing
     html_template = """
     <html>
         <head>
@@ -140,7 +152,7 @@ async def live_telemetry():
     )
 
 
-# -------- ROUTER INCLUSIONS --------
+# 11. ROUTER REGISTRY
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(generate.router, prefix="", tags=["Generation"])
 app.include_router(history.router, prefix="/history", tags=["History"])
