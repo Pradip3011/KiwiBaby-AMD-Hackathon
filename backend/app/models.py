@@ -25,7 +25,7 @@ class User(Base):
 
 
 # -------------------------
-# TEST RUN TABLE (CORE - GLOBAL TELEMETRY UPDATED)
+# TEST RUN TABLE (CORE - GLOBAL TELEMETRY + AMD TRACK 1 TUNING)
 # -------------------------
 class TestRun(Base):
     __tablename__ = "test_runs"
@@ -47,14 +47,30 @@ class TestRun(Base):
     # Coverage tracking
     coverage_percent = Column(Float, nullable=True)
 
-    # 🌍 GLOBAL TELEMETRY FIELDS (NEW)
+    # 🌍 GLOBAL TELEMETRY FIELDS
     # --------------------------------
     trigger_ip = Column(String, nullable=True)
     trigger_city = Column(String, nullable=True)
     trigger_country = Column(String, nullable=True)
 
+    # 🏎️ AMD HACKATHON TRACK 1 ROUTING METRICS
+    # --------------------------------
+    # Destination node: "LOCAL_CPU", "REMOTE_AMD", or "COMPRESSED_REMOTE"
+    routing_destination = Column(String, nullable=False, default="LOCAL_CPU")
+    
+    # Precise metric tracking for leaderboard evaluation
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    
+    # Timing and operational cost boundaries
+    execution_latency_ms = Column(Float, nullable=False, default=0.0)
+    estimated_cost_saved = Column(Float, nullable=False, default=0.0)
+    compression_ratio = Column(Float, nullable=True, default=1.0)
+
     # Timestamp
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     def __repr__(self):
-        return f"<TestRun id={self.id} user_id={self.user_id} format={self.format}>"
+        return (f"<TestRun id={self.id} user_id={self.user_id} "
+                f"dest={self.routing_destination} savings=${self.estimated_cost_saved:.4f}>")

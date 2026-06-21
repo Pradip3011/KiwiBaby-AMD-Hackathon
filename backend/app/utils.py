@@ -1,11 +1,9 @@
-# backend/app/utils.py
-
 import json
 import re
 import logging
 from typing import Any
 
-logger = logging.getLogger("ai-testcase-agent.utils")
+logger = logging.getLogger("kiwibaby.utils")
 
 
 # -------------------------
@@ -15,7 +13,6 @@ def try_parse_json(text: str) -> Any | None:
     """
     Robust JSON parser for LLM output.
     """
-
     if not text or not isinstance(text, str):
         logger.warning("Invalid input to try_parse_json")
         return None
@@ -66,7 +63,6 @@ def auto_number_test_cases(json_data: Any) -> Any:
     """
     Assign sequential IDs: TC_001, TC_002
     """
-
     if not json_data:
         return json_data
 
@@ -85,3 +81,49 @@ def auto_number_test_cases(json_data: Any) -> Any:
         return json_data
 
     return json_data
+
+
+# ---------------------------------------------------------
+# 🏎️ TRACK 1 PROMPT COMPRESSION ENGINE
+# ---------------------------------------------------------
+def compress_prompt_payload(prompt: str) -> tuple[str, float]:
+    """
+    Slices non-essential conversational words and redundant fluff.
+    Targets a 20-35% token reduction for Tier 2 remote optimizations
+    while explicitly guarding core operational logic predicates.
+    """
+    if not prompt or not prompt.strip():
+        return prompt, 1.0
+
+    original_words = prompt.split()
+    original_count = len(original_words)
+
+    # Fluff arrays to scrub for token optimization
+    conversational_noise = [
+        r"\bplease\b", r"\bcould you\b", r"\bkindly\b", r"\bwrite a test case for\b",
+        r"\bgenerate test cases for\b", r"\bi want to\b", r"\bcan you help me\b",
+        r"\bmake sure to\b", r"\bas an agent\b", r"\bfor the purpose of\b"
+    ]
+
+    compressed_text = prompt
+    for pattern in conversational_noise:
+        compressed_text = re.sub(pattern, "", compressed_text, flags=re.IGNORECASE)
+
+    # Collapse extra spacing artifacts left from stripping
+    compressed_text = re.sub(r"\s+", " ", compressed_text).strip()
+    
+    compressed_words = compressed_text.split()
+    compressed_count = len(compressed_words)
+
+    # Protect meaning: If compression accidentally clears out too much, fall back to original
+    if compressed_count < 5 and original_count > 10:
+        logger.warning("Compression degraded payload context integrity. Falling back to original.")
+        return prompt, 1.0
+
+    compression_ratio = round(compressed_count / original_count, 4) if original_count > 0 else 1.0
+    reduction = 1.0 - compression_ratio
+
+    if reduction < 0.20 and original_count > 40:
+        logger.info(f"Compression yield minimal: {reduction * 100:.1f}% reduction recorded.")
+
+    return compressed_text, compression_ratio

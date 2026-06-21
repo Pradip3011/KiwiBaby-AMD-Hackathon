@@ -9,7 +9,7 @@ logger = logging.getLogger("kiwibaby.memory")
 try:
     import chromadb
 
-    # Disable ChromaDB on Windows
+    # Disable ChromaDB on Windows to avoid local C++ binary compiler traps
     if os.name == "nt":
         HAS_CHROMADB = False
     else:
@@ -22,6 +22,8 @@ except ImportError:
 # ---------------------------------------------------------
 # 🧠 Hybrid Cross-Platform Embedding Engine
 # ---------------------------------------------------------
+gemini_client = None
+
 try:
     from sentence_transformers import SentenceTransformer
     # Local Windows acceleration path
@@ -29,12 +31,13 @@ try:
     HAS_LOCAL_TRANSFORMERS = True
     logger.info("Memory Engine: Utilizing local SentenceTransformer acceleration.")
 except ImportError:
-    # Serverless Cloud path (Vercel Linux container)
-    import google.generativeai as genai
+    # Serverless Cloud path (Vercel Linux container) using modern google-genai SDK
+    from google import genai
+    from google.genai import types
     HAS_LOCAL_TRANSFORMERS = False
     if os.getenv("GEMINI_API_KEY"):
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    logger.info("Memory Engine: Heavy ML dependencies skipped. Switching to Gemini Cloud Embeddings.")
+        gemini_client = genai.Client()
+    logger.info("Memory Engine: Heavy ML dependencies skipped. Switching to modern Gemini Cloud Embeddings.")
 
 
 def generate_embedding(text: str) -> list:
@@ -49,12 +52,22 @@ def generate_embedding(text: str) -> list:
     if not os.getenv("GEMINI_API_KEY"):
         raise ValueError("Missing critical environment key: GEMINI_API_KEY")
         
-    response = genai.embed_content(
-        model="models/text-embedding-004",
-        content=text,
-        task_type="retrieval_document"
+    global gemini_client
+    if gemini_client is None:
+        from google import genai
+        gemini_client = genai.Client()
+        
+    from google.genai import types
+    
+    # Execute modern v2 embedding retrieval API call
+    response = gemini_client.models.embed_content(
+        model="text-embedding-004",
+        contents=text,
+        config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
     )
-    return response['embedding']
+    
+    # Return numerical float payload values array from the modern SDK structure
+    return response.embeddings[0].values
 
 
 # ---------------------------------------------------------
